@@ -29,15 +29,15 @@
 ---
 
 ## 3. Vocabulary Module (`/words`)
-- [ ] Create `WordsModule`.
-- [ ] **DTOs:** `CreateWordDto`, `UpdateWordDto`.
-- [ ] **Controller:**
+- [x] Create `WordsModule`.
+- [x] **DTOs:** `CreateWordDto`, `UpdateWordDto`.
+- [x] **Controller:**
   - `POST /words`: Create a new word (Admin only).
   - `GET /words`: Get a paginated list of all words.
   - `GET /words/:id`: Get a single word by ID.
   - `PATCH /words/:id`: Update a word (Admin only).
   - `DELETE /words/:id`: Delete a word (Admin only).
-- [ ] **Service:** Implement CRUD logic using Prisma Client.
+- [x] **Service:** Implement CRUD logic using Prisma Client.
 
 ---
 
