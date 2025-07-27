@@ -6,10 +6,91 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdQuizzes Quiz[]        @relation("QuizCreator")
+  quizAttempts   QuizAttempt[]
+
+  @@map("users")
+}
+
+model Word {
+  id            String   @id @default(cuid())
+  hiragana      String
+  katakana      String?
+  kanji         String?
+  pronunciation String
+  meaning       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  quizWords QuizWord[]
+
+  @@map("words")
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  isPublic    Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  creator   User          @relation("QuizCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  quizWords QuizWord[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizWord {
+  id     String @id @default(cuid())
+  quizId String
+  wordId String
+
+  // Relations
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  word Word @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, wordId])
+  @@map("quiz_words")
+}
+
+model QuizAttempt {
+  id          String   @id @default(cuid())
+  userId      String
+  quizId      String
+  score       Int
+  completedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_attempts")
 }
