@@ -1,8 +1,8 @@
 # Project: JLPT N5 Vocabulary & Quiz App - Backend Tasks
 
 ## 1. Core Setup & Configuration
-- [ ] Initialize NestJS project.
-- [ ] Integrate Prisma ORM.
+- [x] Initialize NestJS project.
+- [x] Integrate Prisma ORM.
 - [ ] Define database schema in `schema.prisma` for:
   - `User` (id, email, password, role: `USER` | `ADMIN`)
   - `Word` (id, hiragana, katakana, kanji, pronunciation, meaning)
