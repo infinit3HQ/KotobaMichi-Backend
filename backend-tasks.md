@@ -3,14 +3,14 @@
 ## 1. Core Setup & Configuration
 - [x] Initialize NestJS project.
 - [x] Integrate Prisma ORM.
-- [ ] Define database schema in `schema.prisma` for:
+- [x] Define database schema in `schema.prisma` for:
   - `User` (id, email, password, role: `USER` | `ADMIN`)
   - `Word` (id, hiragana, katakana, kanji, pronunciation, meaning)
   - `Quiz` (id, title, description, createdById -> `User`, isPublic)
   - `QuizWord` (join table for many-to-many between `Quiz` and `Word`)
   - `QuizAttempt` (id, userId, quizId, score, completedAt)
-- [ ] Set up environment variables (`.env`) for database URL, JWT secret, and port.
-- [ ] Configure `main.ts` with global pipes for validation (`ValidationPipe`).
+- [x] Set up environment variables (`.env`) for database URL, JWT secret, and port.
+- [x] Configure `main.ts` with global pipes for validation (`ValidationPipe`).
 
 ---
 
