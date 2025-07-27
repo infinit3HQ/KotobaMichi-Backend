@@ -15,14 +15,14 @@
 ---
 
 ## 2. Authentication & Authorization Module (`/auth`)
-- [ ] Create `AuthModule`.
-- [ ] **DTOs:** `RegisterUserDto`, `LoginUserDto`.
-- [ ] **Controller:**
+- [x] Create `AuthModule`.
+- [x] **DTOs:** `RegisterUserDto`, `LoginUserDto`.
+- [x] **Controller:**
   - `POST /auth/register`: Handle user registration (hash password with bcrypt).
   - `POST /auth/login`: Validate credentials and return a JWT.
-- [ ] **Service:** Implement registration and login logic.
-- [ ] **JWT Strategy:** Implement `JwtStrategy` for Passport.js.
-- [ ] **Guards:**
+- [x] **Service:** Implement registration and login logic.
+- [x] **JWT Strategy:** Implement `JwtStrategy` for Passport.js.
+- [x] **Guards:**
   - `JwtAuthGuard`: Protect routes requiring authentication.
   - `RolesGuard`: Protect routes based on user role (`ADMIN` vs. `USER`).
 
