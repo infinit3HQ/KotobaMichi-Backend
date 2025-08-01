@@ -42,16 +42,16 @@
 ---
 
 ## 4. Quiz Module (`/quizzes`)
-- [ ] Create `QuizzesModule`.
-- [ ] **DTOs:** `CreateQuizDto` (title, description, isPublic, wordIds: `string[]`), `SubmitQuizDto` (answers: `{ wordId: string, answer: string }[]`).
-- [ ] **Controller:**
+- [x] Create `QuizzesModule`.
+- [x] **DTOs:** `CreateQuizDto` (title, description, isPublic, wordIds: `string[]`), `SubmitQuizDto` (answers: `{ wordId: string, answer: string }[]`).
+- [x] **Controller:**
   - `POST /quizzes`: Create a new quiz (user-created or admin-created general quiz).
   - `GET /quizzes`: Get all public (general) quizzes.
   - `GET /quizzes/my-quizzes`: Get all quizzes created by the authenticated user.
   - `GET /quizzes/:id`: Get quiz details and its associated words.
   - `DELETE /quizzes/:id`: Delete a quiz (only by creator or admin).
   - `POST /quizzes/:id/submit`: Submit answers for a quiz attempt and get results.
-- [ ] **Service:**
+- [x] **Service:**
   - Implement quiz creation logic, linking words via the `QuizWord` join table.
   - Implement quiz submission logic to calculate score and save the attempt.
 
