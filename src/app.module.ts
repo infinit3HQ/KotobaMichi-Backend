@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { WordsModule } from './words/words.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
 	imports: [
@@ -17,6 +18,7 @@ import { QuizzesModule } from './quizzes/quizzes.module';
 		AuthModule,
 		WordsModule,
 		QuizzesModule,
+		UsersModule,
 	],
 	controllers: [AppController],
 	providers: [AppService],

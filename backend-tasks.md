@@ -58,16 +58,17 @@
 ---
 
 ## 5. User Module (`/users`)
-- [ ] Create `UsersModule`.
-- [ ] **Controller:**
+- [x] Create `UsersModule`.
+- [x] **Controller:**
   - `GET /users/me`: Get the authenticated user's profile.
   - `GET /users/me/attempts`: Get the authenticated user's quiz attempt history.
-- [ ] **Service:** Implement logic to fetch user data and related history from the database.
+  - `GET /users/me/stats`: Get the authenticated user's statistics (average score, total attempts, etc.).
+- [x] **Service:** Implement logic to fetch user data and related history from the database.
 
 ---
 
 ## 6. Testing & Deployment
-- [ ] Write unit tests for services (e.g., auth logic, quiz scoring).
-- [ ] Write e2e tests for critical API endpoints.
-- [ ] Create a `Dockerfile` for containerization.
-- [ ] Set up a CI/CD pipeline script (e.g., for GitHub Actions).
+- [x] Write unit tests for services (e.g., auth logic, quiz scoring).
+- [x] Write e2e tests for critical API endpoints.
+- [x] Create a `Dockerfile` for containerization.
+- [x] Set up a CI/CD pipeline script (e.g., for GitHub Actions).
