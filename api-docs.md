@@ -118,6 +118,51 @@ Authorization: Bearer <token>
   { "message": "Word deleted successfully" }
   ```
 
+### Import Words from CSV
+
+- **POST** `/words/import/csv`
+- **Auth:** `Bearer` token (admin only)
+- **Body:**
+  ```json
+  {
+    "filePath": "/absolute/path/to/vocab.csv"
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "total": 562,
+    "imported": 562,
+    "duplicates": 0,
+    "errors": 0,
+    "errorDetails": []
+  }
+  ```
+
+### Get Import Statistics
+
+- **GET** `/words/import/stats`
+- **Auth:** `Bearer` token (admin only)
+- **Response:**
+  ```json
+  {
+    "totalWords": 562,
+    "recentImports": 562,
+    "lastImportTime": "2025-08-02T15:39:54.123Z"
+  }
+  ```
+
+### Clear All Words
+
+- **DELETE** `/words/import/clear-all`
+- **Auth:** `Bearer` token (admin only)
+- **Response:**
+  ```json
+  {
+    "deletedCount": 562
+  }
+  ```
+
 ---
 
 ## 3. Quizzes (`/quizzes`)
@@ -293,6 +338,55 @@ Authorization: Bearer <token>
 
 ---
 
+## 6. CSV Import System
+
+The KotobaMichi backend includes an optimized CSV import system for bulk vocabulary loading.
+
+### Features
+- **Hash-based duplicate detection** using SHA-256 for O(1) lookups
+- **Batch processing** (100 words per batch) for optimal database performance
+- **Comprehensive validation** with detailed error reporting
+- **Import statistics** and progress tracking
+- **Skip duplicates** without failing the entire import
+
+### CSV Format
+The system expects CSV files with the following columns:
+- `Kanji`: Japanese kanji characters (optional, can be empty)
+- `Hiragana`: Japanese hiragana reading (required)
+- `English`: English meaning (required)
+- `PronunciationURL`: URL to audio pronunciation (required)
+
+Example CSV:
+```csv
+Kanji,Hiragana,English,PronunciationURL
+会う,あう,to meet,https://example.com/audio/meet.mp3
+青,あお,blue,https://example.com/audio/blue.mp3
+,あちら,there,https://example.com/audio/there.mp3
+```
+
+### CLI Usage
+For convenience, you can use the provided CLI script:
+```bash
+pnpm run import:csv
+```
+
+This script will:
+1. Read the `vocab_n5_updated.csv` file from the project root
+2. Parse and validate all entries
+3. Check for duplicates using content hashing
+4. Import words in optimized batches
+5. Provide detailed progress and statistics
+
+### Performance
+- Processes 562 words in ~4 seconds
+- Handles duplicate detection in O(1) time
+- Uses bulk database operations for efficiency
+- Memory-efficient streaming for large files
+
+For detailed documentation, see the [CSV Import Guide](./CSV_IMPORT_GUIDE.md).
+
+---
+
 ## 5. Health Check
 
 - **GET** `/health`
@@ -326,6 +420,7 @@ Authorization: Bearer <token>
   kanji?: string;
   pronunciation: string;
   meaning: string;
+  contentHash: string; // SHA-256 hash for duplicate detection
 }
 ```
 

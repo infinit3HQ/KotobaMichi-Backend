@@ -6,6 +6,7 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 
 - 🔐 **Authentication & Authorization** - JWT-based auth with role-based access control
 - 📚 **Vocabulary Management** - CRUD operations for Japanese words with hiragana, katakana, kanji, and meanings
+- 📥 **CSV Import System** - Optimized bulk import with hash-based duplicate detection and batch processing
 - 🧩 **Quiz System** - Create and take quizzes with automatic scoring
 - 👤 **User Profiles** - User dashboard with quiz history and statistics
 - 📊 **Analytics** - Track learning progress and performance metrics
@@ -31,6 +32,9 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 - `POST /words` - Create new word (Admin only)
 - `PATCH /words/:id` - Update word (Admin only)
 - `DELETE /words/:id` - Delete word (Admin only)
+- `POST /words/import/csv` - Import words from CSV file (Admin only)
+- `GET /words/import/stats` - Get import statistics (Admin only)
+- `DELETE /words/import/clear-all` - Clear all words (Admin only)
 
 ### Quizzes (`/quizzes`)
 - `GET /quizzes` - Get all public quizzes
@@ -79,7 +83,13 @@ npx prisma generate
 npx prisma db seed
 ```
 
-5. Start the development server:
+5. Import vocabulary data:
+```bash
+# Import Japanese N5 vocabulary from CSV
+pnpm run import:csv
+```
+
+6. Start the development server:
 ```bash
 pnpm run start:dev
 ```
@@ -99,10 +109,35 @@ PORT=3000
 The application uses the following main entities:
 
 - **User** - User accounts with email, password, and role
-- **Word** - Japanese vocabulary with hiragana, katakana, kanji, pronunciation, and meaning
+- **Word** - Japanese vocabulary with hiragana, katakana, kanji, pronunciation, meaning, and contentHash for duplicate detection
 - **Quiz** - Quiz collections linking multiple words
 - **QuizWord** - Many-to-many relationship between quizzes and words
 - **QuizAttempt** - User quiz attempts with scores and completion times
+
+## CSV Import System
+
+The application includes an optimized CSV import system for bulk vocabulary loading:
+
+### Features
+- **Hash-based duplicate detection** using SHA-256 for fast lookups
+- **Batch processing** (100 words per batch) for optimal performance
+- **Comprehensive validation** and error reporting
+- **Import statistics** and progress tracking
+
+### Usage
+```bash
+# Import vocabulary from CSV file
+pnpm run import:csv
+```
+
+### CSV Format
+The system expects CSV files with these columns:
+- `Kanji`: Japanese kanji characters (optional)
+- `Hiragana`: Japanese hiragana reading (required)
+- `English`: English meaning (required) 
+- `PronunciationURL`: URL to audio pronunciation (required)
+
+For detailed documentation, see [CSV_IMPORT_GUIDE.md](./CSV_IMPORT_GUIDE.md)
 
 ## Testing
 
