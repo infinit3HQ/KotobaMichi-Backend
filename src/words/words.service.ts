@@ -2,14 +2,42 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWordDto } from './dto/create-word.dto';
 import { UpdateWordDto } from './dto/update-word.dto';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class WordsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Generate a hash for duplicate detection
+   */
+  private generateContentHash(hiragana: string, kanji: string | null, meaning: string): string {
+    const content = `${hiragana}|${kanji || ''}|${meaning}`.toLowerCase();
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
   async create(createWordDto: CreateWordDto) {
+    // Generate content hash for duplicate detection
+    const contentHash = this.generateContentHash(
+      createWordDto.hiragana,
+      createWordDto.kanji || null,
+      createWordDto.meaning
+    );
+
+    // Check if word already exists
+    const existingWord = await this.prisma.word.findUnique({
+      where: { contentHash },
+    });
+
+    if (existingWord) {
+      throw new Error('A word with similar content already exists');
+    }
+
     return this.prisma.word.create({
-      data: createWordDto,
+      data: {
+        ...createWordDto,
+        contentHash,
+      },
     });
   }
 

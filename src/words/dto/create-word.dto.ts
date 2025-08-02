@@ -6,8 +6,8 @@ export class CreateWordDto {
   hiragana: string;
 
   @IsString()
-  @IsNotEmpty()
-  katakana: string;
+  @IsOptional()
+  katakana?: string;
 
   @IsString()
   @IsOptional()
