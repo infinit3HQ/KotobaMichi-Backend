@@ -1,23 +1,41 @@
-# Migration Setup Documentation
+# KotobaMichi Backend - Migration & Deployment Guide
 
-## Overview
+This guide covers database migrations, Docker containerization, and deployment strategies for the KotobaMichi backend.
 
-This project includes a separate Docker image specifically for running Prisma database migrations. This approach provides several benefits:
+## 🗄️ Database Migration System
 
-- **Automated migrations**: Migrations run automatically before the main application starts
-- **Separate concerns**: Migration logic is isolated from the main application
-- **CI/CD friendly**: Easy to run migrations in deployment pipelines
-- **Environment agnostic**: Works consistently across development, staging, and production
+### Automated Docker Migration
 
-## Files
+The project now includes a **dedicated migration Docker container** that automatically runs database migrations before the application starts.
 
-- `Dockerfile.migration`: Builds the migration-specific Docker image
-- `scripts/run-migrations.sh`: Standalone script for running migrations
-- `docker-compose.yml`: Includes migration service that runs before the main app
+#### Architecture Overview
 
-## Docker Compose Usage
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   PostgreSQL    │    │   Migration     │    │   Application   │
+│   Database      │ <- │   Container     │ <- │   Container     │
+│                 │    │ (runs once)     │    │ (starts after)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
 
-The migration service is automatically included in the docker-compose setup:
+### Quick Start
+
+1. **Start everything with Docker Compose:**
+   ```bash
+   docker-compose up --build
+   ```
+
+2. **For production deployment:**
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+### How It Works
+
+1. **Database** starts and becomes healthy
+2. **Migration container** runs `prisma migrate deploy`
+3. **App container** starts after migrations complete successfully
+4. All containers share the same Docker network for communication
 
 ```bash
 # Start all services (database, migrations, then app)
