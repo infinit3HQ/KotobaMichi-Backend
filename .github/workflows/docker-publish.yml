@@ -29,8 +29,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
+      - name: Extract metadata for main app (tags, labels)
+        id: meta-app
         uses: docker/metadata-action@v5
         with:
           images: |
@@ -40,19 +40,46 @@ jobs:
             type=ref,event=branch
             type=sha
 
-      - name: Build and push
+      - name: Extract metadata for migration (tags, labels)
+        id: meta-migration
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}-migration
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+            type=sha
+
+      - name: Build and push main application
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta-app.outputs.tags }}
+          labels: ${{ steps.meta-app.outputs.labels }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+
+      - name: Build and push migration image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.migration
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta-migration.outputs.tags }}
+          labels: ${{ steps.meta-migration.outputs.labels }}
+          cache-from: type=gha,scope=migration
+          cache-to: type=gha,mode=max,scope=migration
 
       - name: Summary
         run: |
           echo "Pushed image tags:" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "Main App:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-app.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Migration:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-migration.outputs.tags }}" >> $GITHUB_STEP_SUMMARY

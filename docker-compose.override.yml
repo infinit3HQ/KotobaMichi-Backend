@@ -1,0 +1,21 @@
+# Development override for docker-compose
+# This file provides local build configurations for development
+
+services:
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile.migration
+    image: kotobamichi-migration:local
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kotobamichi-backend:local
+    environment:
+      - NODE_ENV=development
+    volumes:
+      # Mount source code for hot reloading in development
+      - ./src:/app/src:ro
+      - ./prisma:/app/prisma:ro

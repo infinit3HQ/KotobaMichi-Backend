@@ -1,0 +1,37 @@
+# Migration stage - lightweight Alpine image for running Prisma migrations
+FROM node:18-alpine AS migration
+
+# Set working directory
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Install runtime utilities (minimal set for Alpine)
+RUN apk add --no-cache curl
+
+# Copy package files
+COPY package*.json ./
+COPY pnpm-lock.yaml ./
+
+# Install dependencies (including dev dependencies for Prisma CLI)
+RUN pnpm install
+
+# Copy Prisma schema and migrations
+COPY prisma ./prisma
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs \
+  && adduser -S nestjs -u 1001
+
+# Change ownership of the app directory to the non-root user
+RUN chown -R nestjs:nodejs /app
+
+# Switch to non-root user
+USER nestjs
+
+# Default command to run migrations
+CMD ["npx", "prisma", "migrate", "deploy"]
