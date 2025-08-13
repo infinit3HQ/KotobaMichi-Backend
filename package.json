@@ -18,7 +18,14 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "import:csv": "ts-node -r tsconfig-paths/register scripts/import-csv.ts"
+    "import:csv": "ts-node -r tsconfig-paths/register scripts/import-csv.ts",
+    "db:migrate": "npx prisma migrate deploy",
+    "db:migrate:dev": "npx prisma migrate dev",
+    "db:migrate:reset": "npx prisma migrate reset",
+    "db:generate": "npx prisma generate",
+    "docker:build": "docker build -t kotobamichi-backend .",
+    "docker:build:migration": "docker build -f Dockerfile.migration -t kotobamichi-migration .",
+    "docker:migration": "docker run --rm -e DATABASE_URL=\"$DATABASE_URL\" kotobamichi-migration"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

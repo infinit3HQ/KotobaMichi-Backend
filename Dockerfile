@@ -40,7 +40,6 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/prisma ./prisma
 
 # Install runtime utilities
