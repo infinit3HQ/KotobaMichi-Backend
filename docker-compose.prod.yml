@@ -5,43 +5,43 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-kotobamichi}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - '${DB_PORT:-5432}:5432'
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - kotobamichi-network
+      - kotobamichi-network # This part stays the same
 
   migration:
+    container_name: kotobamichi-migration
     image: ghcr.io/infinit3hq/kotobamichi-backend-migration:latest
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
+    env_file:
+      - .env
     depends_on:
       db:
         condition: service_healthy
-    restart: "no"
+    restart: 'no'
     networks:
-      - kotobamichi-network
+      - kotobamichi-network # This part stays the same
 
   app:
+    container_name: kotobamichi-app
     image: ghcr.io/infinit3hq/kotobamichi-backend:latest
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
-      - PORT=${PORT:-3000}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
+      - '${PORT:-3000}:${PORT:-3000}'
     depends_on:
       db:
         condition: service_healthy
@@ -49,17 +49,22 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:${PORT:-3000}/v1/health || exit 1"]
+      test:
+        [
+          'CMD-SHELL',
+          'curl -f http://localhost:${PORT:-3000}/v1/health || exit 1',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
     networks:
-      - kotobamichi-network
+      - kotobamichi-network # This part stays the same
 
 volumes:
   postgres_data:
+    driver: local
 
 networks:
   kotobamichi-network:
-    driver: bridge
+    external: true
