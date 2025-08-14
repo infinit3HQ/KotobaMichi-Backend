@@ -62,6 +62,7 @@ services:
       start_period: 5s
     networks:
       - kotobamichi-network # This part stays the same
+      - nginxnew_default
 
 volumes:
   postgres_data:
@@ -69,4 +70,6 @@ volumes:
 
 networks:
   kotobamichi-network:
+    external: true
+  nginxnew_default:
     external: true
