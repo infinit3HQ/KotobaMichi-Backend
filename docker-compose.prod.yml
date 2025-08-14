@@ -9,8 +9,9 @@ services:
       - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - '${DB_PORT:-5432}:5432'
+    # no port expose for security resons all acess internally
+    # ports:
+    #   - '${DB_PORT:-5432}:5432'
     restart: unless-stopped
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
@@ -40,8 +41,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3000}
-    ports:
-      - '${PORT:-3000}:${PORT:-3000}'
+    # port expose blocked and use internal acess only for better security
+    # ports:
+    #   - '${PORT:-3000}:${PORT:-3000}'
     depends_on:
       db:
         condition: service_healthy
