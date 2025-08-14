@@ -1,0 +1,198 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: ['Build and Publish Docker Image']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      port:
+        description: 'Override PORT (optional, default 3000)'
+        required: false
+        type: string
+      db_port:
+        description: 'Override DB_PORT (optional, default 5432)'
+        required: false
+        type: string
+      postgres_db:
+        description: 'Override POSTGRES_DB (optional, default kotobamichi)'
+        required: false
+        type: string
+      postgres_user:
+        description: 'Override POSTGRES_USER (optional, default postgres)'
+        required: false
+        type: string
+      database_url:
+        description: 'Override DATABASE_URL (optional, otherwise constructed)'
+        required: false
+        type: string
+      jwt_expires_in:
+        description: 'Override JWT_EXPIRES_IN (optional, default 7d)'
+        required: false
+        type: string
+      admin_email:
+        description: 'Set ADMIN_EMAIL (optional)'
+        required: false
+        type: string
+      admin_password:
+        description: 'Set ADMIN_PASSWORD (optional; prefer secret)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Proceed if manual dispatch OR upstream publish workflow succeeded on 'production' branch
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'production')
+    runs-on:
+      - serverone
+      - self-hosted
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create .env for production
+        id: write-env
+        shell: bash
+        env:
+          PORT_INPUT: ${{ inputs.port }}
+          DB_PORT_INPUT: ${{ inputs.db_port }}
+          POSTGRES_DB_INPUT: ${{ inputs.postgres_db }}
+          POSTGRES_USER_INPUT: ${{ inputs.postgres_user }}
+          DATABASE_URL_INPUT: ${{ inputs.database_url }}
+          JWT_EXPIRES_IN_INPUT: ${{ inputs.jwt_expires_in }}
+          ADMIN_EMAIL_INPUT: ${{ inputs.admin_email }}
+          ADMIN_PASSWORD_INPUT: ${{ inputs.admin_password }}
+
+          PORT_VAR: ${{ vars.PORT }}
+          DB_PORT_VAR: ${{ vars.DB_PORT }}
+          POSTGRES_DB_VAR: ${{ vars.POSTGRES_DB }}
+          POSTGRES_USER_VAR: ${{ vars.POSTGRES_USER }}
+          DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
+          JWT_EXPIRES_IN_VAR: ${{ vars.JWT_EXPIRES_IN }}
+          ADMIN_EMAIL_VAR: ${{ vars.ADMIN_EMAIL }}
+
+          POSTGRES_DB_SECRET: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER_SECRET: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD_SECRET: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          DATABASE_URL_SECRET: ${{ secrets.PROD_DATABASE_URL }}
+          JWT_SECRET_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+          JWT_EXPIRES_IN_SECRET: ${{ secrets.PROD_JWT_EXPIRES_IN }}
+          ADMIN_EMAIL_SECRET: ${{ secrets.PROD_ADMIN_EMAIL }}
+          ADMIN_PASSWORD_SECRET: ${{ secrets.PROD_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Resolve values with precedence: manual input > secret (for sensitive) > repo/org var > default
+          PORT="${PORT_INPUT:-${PORT_VAR:-3000}}"
+          DB_PORT="${DB_PORT_INPUT:-${DB_PORT_VAR:-5432}}"
+          POSTGRES_DB="${POSTGRES_DB_INPUT:-}"; [ -n "$POSTGRES_DB" ] || POSTGRES_DB="${POSTGRES_DB_SECRET:-}"; [ -n "$POSTGRES_DB" ] || POSTGRES_DB="${POSTGRES_DB_VAR:-kotobamichi}"
+          POSTGRES_USER="${POSTGRES_USER_INPUT:-}"; [ -n "$POSTGRES_USER" ] || POSTGRES_USER="${POSTGRES_USER_SECRET:-}"; [ -n "$POSTGRES_USER" ] || POSTGRES_USER="${POSTGRES_USER_VAR:-postgres}"
+          POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
+          JWT_SECRET="${JWT_SECRET_SECRET:-}"
+          JWT_EXPIRES_IN="${JWT_EXPIRES_IN_INPUT:-}"; [ -n "$JWT_EXPIRES_IN" ] || JWT_EXPIRES_IN="${JWT_EXPIRES_IN_SECRET:-}"; [ -n "$JWT_EXPIRES_IN" ] || JWT_EXPIRES_IN="${JWT_EXPIRES_IN_VAR:-7d}"
+          ADMIN_EMAIL="${ADMIN_EMAIL_INPUT:-}"; [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="${ADMIN_EMAIL_SECRET:-}"; [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="${ADMIN_EMAIL_VAR:-}"
+          ADMIN_PASSWORD="${ADMIN_PASSWORD_INPUT:-${ADMIN_PASSWORD_SECRET:-}}"
+
+          # DATABASE_URL may be provided directly, else fallback to constructed one (internal host 'db' on 5432)
+          DATABASE_URL="${DATABASE_URL_INPUT:-}"; [ -n "$DATABASE_URL" ] || DATABASE_URL="${DATABASE_URL_SECRET:-}"; [ -n "$DATABASE_URL" ] || DATABASE_URL="${DATABASE_URL_VAR:-}"
+
+          # Validate required secrets
+          if [ -z "$JWT_SECRET" ]; then
+            echo "JWT_SECRET is required but missing (secrets.PROD_JWT_SECRET)." >&2
+            exit 1
+          fi
+
+          if [ -z "$DATABASE_URL" ]; then
+            if [ -z "$POSTGRES_PASSWORD" ]; then
+              echo "Either provide secrets.PROD_DATABASE_URL or secrets.PROD_POSTGRES_PASSWORD to construct one." >&2
+              exit 1
+            fi
+            # Note: if your password contains special characters (@, /, :), prefer providing PROD_DATABASE_URL directly.
+            DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+          fi
+
+          {
+            echo "# Auto-generated by CI on $(date -u)"
+            echo "NODE_ENV=production"
+            echo "PORT=$PORT"
+            echo "DB_PORT=$DB_PORT"
+            echo "POSTGRES_DB=$POSTGRES_DB"
+            echo "POSTGRES_USER=$POSTGRES_USER"
+            # Do not echo POSTGRES_PASSWORD in logs; only write to file when available
+            if [ -n "$POSTGRES_PASSWORD" ]; then echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"; fi
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "JWT_SECRET=$JWT_SECRET"
+            echo "JWT_EXPIRES_IN=$JWT_EXPIRES_IN"
+            if [ -n "$ADMIN_EMAIL" ]; then echo "ADMIN_EMAIL=$ADMIN_EMAIL"; fi
+            if [ -n "$ADMIN_PASSWORD" ]; then echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"; fi
+          } > .env
+
+          # Outputs (non-sensitive only)
+          echo "env_path=.env" >> "$GITHUB_OUTPUT"
+          echo "port=$PORT" >> "$GITHUB_OUTPUT"
+          echo "db_port=$DB_PORT" >> "$GITHUB_OUTPUT"
+          echo "postgres_db=$POSTGRES_DB" >> "$GITHUB_OUTPUT"
+          echo "postgres_user=$POSTGRES_USER" >> "$GITHUB_OUTPUT"
+          echo "jwt_expires_in=$JWT_EXPIRES_IN" >> "$GITHUB_OUTPUT"
+          if [ -n "$ADMIN_EMAIL" ]; then echo "admin_email=$ADMIN_EMAIL" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Ensure external Docker network exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network inspect kotobamichi-network >/dev/null 2>&1 || docker network create kotobamichi-network
+
+      - name: Pull latest images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.prod.yml pull
+
+      - name: Start/Update stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+      - name: Show status
+        shell: bash
+        run: |
+          docker compose -f docker-compose.prod.yml ps
+          echo "--- Recent logs (app) ---"
+          docker compose -f docker-compose.prod.yml logs --tail=120 app || true
+          echo "--- Recent logs (migration) ---"
+          docker compose -f docker-compose.prod.yml logs --tail=80 migration || true
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "Deployment completed on $(hostname) at $(date -u)." >> "$GITHUB_STEP_SUMMARY"
+          echo "PORT: ${{ steps.write-env.outputs.port }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "DB_PORT: ${{ steps.write-env.outputs.db_port }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "POSTGRES_DB: ${{ steps.write-env.outputs.postgres_db }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "POSTGRES_USER: ${{ steps.write-env.outputs.postgres_user }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "JWT_EXPIRES_IN: ${{ steps.write-env.outputs.jwt_expires_in }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ steps.write-env.outputs.admin_email }}" ]; then echo "ADMIN_EMAIL: ${{ steps.write-env.outputs.admin_email }}" >> "$GITHUB_STEP_SUMMARY"; fi
