@@ -8,7 +8,10 @@ import {
   Delete,
   Query,
   UseGuards,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { WordsService } from './words.service';
 import { CreateWordDto } from './dto/create-word.dto';
 import { UpdateWordDto } from './dto/update-word.dto';
@@ -69,6 +72,19 @@ export class WordsController {
   @Roles(UserRole.ADMIN)
   async importFromCsv(@Body('filePath') filePath: string): Promise<BulkImportResultDto> {
     return this.csvImportService.importFromCsv(filePath);
+  }
+
+  // New: CSV upload endpoint (multipart/form-data)
+  @Post('import/upload')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  async importFromUpload(@UploadedFile() file: any): Promise<BulkImportResultDto> {
+    if (!file) {
+      throw new Error('CSV file is required (field name: file)');
+    }
+    // file.buffer is a Buffer when using memory storage
+    return this.csvImportService.importFromCsvContent(file.buffer);
   }
 
   @Get('import/stats')
