@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { parse } from 'csv-parse/sync';
+import * as path from 'path';
 
 interface CsvWord {
   Kanji: string;
@@ -22,6 +23,8 @@ interface ImportResult {
 @Injectable()
 export class CsvImportService {
   private readonly logger = new Logger(CsvImportService.name);
+  // Define the root directory for CSV imports
+  private static readonly CSV_IMPORT_ROOT = path.resolve(process.cwd(), 'csv-imports');
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -202,7 +205,14 @@ export class CsvImportService {
   async importFromCsv(filePath: string): Promise<ImportResult> {
     try {
       this.logger.log(`Starting CSV import from: ${filePath}`);
-      const csvWords = this.parseCsvFile(filePath);
+      // Validate and resolve the file path
+      const root = CsvImportService.CSV_IMPORT_ROOT;
+      const resolvedPath = path.resolve(root, filePath);
+      if (!resolvedPath.startsWith(root + path.sep)) {
+        this.logger.error(`Attempted access to file outside import root: ${resolvedPath}`);
+        throw new Error('Invalid file path: Access denied.');
+      }
+      const csvWords = this.parseCsvFile(resolvedPath);
       this.logger.log(`Found ${csvWords.length} words in CSV file`);
       return await this.processCsvRecords(csvWords);
     } catch (error) {
