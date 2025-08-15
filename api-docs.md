@@ -128,6 +128,46 @@ Authorization: Bearer <token>
     "filePath": "/absolute/path/to/vocab.csv"
   }
   ```
+
+### Import Words from CSV (Upload)
+
+- POST `/words/import/upload`
+- Auth: `Bearer` token (admin only)
+- Content-Type: `multipart/form-data`
+- Form field: `file` (the CSV file)
+- Response:
+  ```json
+  {
+    "total": 562,
+    "imported": 520,
+    "duplicates": 42,
+    "errors": 0,
+    "errorDetails": []
+  }
+  ```
+
+Example (curl):
+
+```bash
+curl -X POST \
+  http://localhost:3000/v1/words/import/upload \
+  -H "Authorization: Bearer <admin-jwt>" \
+  -F "file=@vocab_n5_updated.csv;type=text/csv"
+```
+
+Example (fetch):
+
+```ts
+const form = new FormData();
+form.append('file', file); // file is a File from input[type=file]
+
+const res = await fetch('http://localhost:3000/v1/words/import/upload', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: form,
+});
+const data = await res.json();
+```
 - **Response:**
   ```json
   {

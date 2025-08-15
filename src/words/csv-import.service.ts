@@ -54,6 +54,24 @@ export class CsvImportService {
   }
 
   /**
+   * Parse CSV content (string or Buffer) and return word data
+   */
+  private parseCsvContent(content: string | Buffer): CsvWord[] {
+    try {
+      const records = parse(content, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      }) as CsvWord[];
+      return records;
+    } catch (error) {
+      const errorMessage = (error instanceof Error) ? error.message : String(error);
+      this.logger.error(`Failed to parse CSV content: ${errorMessage}`);
+      throw new Error(`Failed to parse CSV content: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Check if a word already exists by content hash
    */
   private async wordExists(contentHash: string): Promise<boolean> {
@@ -86,103 +104,127 @@ export class CsvImportService {
   }
 
   /**
-   * Import words from CSV file with optimization and duplicate checking
+   * Core processor for parsed CSV records
    */
-  async importFromCsv(filePath: string): Promise<ImportResult> {
+  private async processCsvRecords(csvWords: CsvWord[]): Promise<ImportResult> {
     const result: ImportResult = {
-      total: 0,
+      total: csvWords.length,
       imported: 0,
       duplicates: 0,
       errors: 0,
       errorDetails: [],
     };
 
+    // Process words in batches for better performance
+    const batchSize = 100;
+    const batches: CsvWord[][] = [];
+
+    for (let i = 0; i < csvWords.length; i += batchSize) {
+      batches.push(csvWords.slice(i, i + batchSize));
+    }
+
+    for (const [batchIndex, batch] of batches.entries()) {
+      this.logger.log(`Processing batch ${batchIndex + 1}/${batches.length}`);
+
+      const wordsToInsert: Array<{
+        hiragana: string;
+        katakana: string | null;
+        kanji: string | null;
+        pronunciation: string;
+        meaning: string;
+        contentHash: string;
+      }> = [];
+
+      for (const [index, csvWord] of batch.entries()) {
+        const globalIndex = batchIndex * batchSize + index;
+
+        // Validate word data
+        const validationErrors = this.validateWordData(csvWord, globalIndex);
+        if (validationErrors.length > 0) {
+          result.errors++;
+          result.errorDetails.push(...validationErrors);
+          continue;
+        }
+
+        // Generate content hash
+        const contentHash = this.generateContentHash(
+          csvWord.Hiragana,
+          csvWord.Kanji,
+          csvWord.English,
+        );
+
+        // Check for duplicates
+        const exists = await this.wordExists(contentHash);
+        if (exists) {
+          result.duplicates++;
+          this.logger.debug(`Duplicate found: ${csvWord.Hiragana} (${csvWord.English})`);
+          continue;
+        }
+
+        // Prepare word for insertion
+        const wordData = {
+          hiragana: csvWord.Hiragana.trim(),
+          katakana: null, // CSV doesn't have katakana, set to null
+          kanji: csvWord.Kanji?.trim() || null,
+          pronunciation: csvWord.PronunciationURL.trim(),
+          meaning: csvWord.English.trim(),
+          contentHash,
+        };
+
+        wordsToInsert.push(wordData);
+      }
+
+      // Bulk insert words in this batch
+      if (wordsToInsert.length > 0) {
+        try {
+          await this.prisma.word.createMany({
+            data: wordsToInsert,
+            skipDuplicates: true, // Additional safety net
+          });
+          result.imported += wordsToInsert.length;
+          this.logger.log(`Inserted ${wordsToInsert.length} words from batch ${batchIndex + 1}`);
+        } catch (error) {
+          const errorMessage = (error instanceof Error) ? error.message : String(error);
+          this.logger.error(`Failed to insert batch ${batchIndex + 1}: ${errorMessage}`);
+          result.errors += wordsToInsert.length;
+          result.errorDetails.push(`Batch ${batchIndex + 1} insertion failed: ${errorMessage}`);
+        }
+      }
+    }
+
+    this.logger.log(`Import completed: ${result.imported} imported, ${result.duplicates} duplicates, ${result.errors} errors`);
+    return result;
+  }
+
+  /**
+   * Import words from CSV file path
+   */
+  async importFromCsv(filePath: string): Promise<ImportResult> {
     try {
       this.logger.log(`Starting CSV import from: ${filePath}`);
-      
-      // Parse CSV file
       const csvWords = this.parseCsvFile(filePath);
-      result.total = csvWords.length;
-      
-      this.logger.log(`Found ${result.total} words in CSV file`);
-
-      // Process words in batches for better performance
-      const batchSize = 100;
-      const batches = [];
-      
-      for (let i = 0; i < csvWords.length; i += batchSize) {
-        batches.push(csvWords.slice(i, i + batchSize));
-      }
-
-      for (const [batchIndex, batch] of batches.entries()) {
-        this.logger.log(`Processing batch ${batchIndex + 1}/${batches.length}`);
-        
-        const wordsToInsert = [];
-        
-        for (const [index, csvWord] of batch.entries()) {
-          const globalIndex = batchIndex * batchSize + index;
-          
-          // Validate word data
-          const validationErrors = this.validateWordData(csvWord, globalIndex);
-          if (validationErrors.length > 0) {
-            result.errors++;
-            result.errorDetails.push(...validationErrors);
-            continue;
-          }
-
-          // Generate content hash
-          const contentHash = this.generateContentHash(
-            csvWord.Hiragana,
-            csvWord.Kanji,
-            csvWord.English
-          );
-
-          // Check for duplicates
-          const exists = await this.wordExists(contentHash);
-          if (exists) {
-            result.duplicates++;
-            this.logger.debug(`Duplicate found: ${csvWord.Hiragana} (${csvWord.English})`);
-            continue;
-          }
-
-          // Prepare word for insertion
-          const wordData = {
-            hiragana: csvWord.Hiragana.trim(),
-            katakana: null, // CSV doesn't have katakana, set to null
-            kanji: csvWord.Kanji?.trim() || null,
-            pronunciation: csvWord.PronunciationURL.trim(),
-            meaning: csvWord.English.trim(),
-            contentHash,
-          };
-
-          wordsToInsert.push(wordData);
-        }
-
-        // Bulk insert words in this batch
-        if (wordsToInsert.length > 0) {
-          try {
-            await this.prisma.word.createMany({
-              data: wordsToInsert,
-              skipDuplicates: true, // Additional safety net
-            });
-            result.imported += wordsToInsert.length;
-            this.logger.log(`Inserted ${wordsToInsert.length} words from batch ${batchIndex + 1}`);
-          } catch (error) {
-            const errorMessage = (error instanceof Error) ? error.message : String(error);
-            this.logger.error(`Failed to insert batch ${batchIndex + 1}: ${errorMessage}`);
-            result.errors += wordsToInsert.length;
-            result.errorDetails.push(`Batch ${batchIndex + 1} insertion failed: ${errorMessage}`);
-          }
-        }
-      }
-
-      this.logger.log(`Import completed: ${result.imported} imported, ${result.duplicates} duplicates, ${result.errors} errors`);
-      return result;
-
+      this.logger.log(`Found ${csvWords.length} words in CSV file`);
+      return await this.processCsvRecords(csvWords);
     } catch (error) {
       const errorMessage = (error instanceof Error) ? error.message : String(error);
       this.logger.error(`CSV import failed: ${errorMessage}`);
       throw new Error(`CSV import failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Import words from CSV content (uploaded file)
+   */
+  async importFromCsvContent(content: string | Buffer): Promise<ImportResult> {
+    try {
+      this.logger.log('Starting CSV import from uploaded content');
+      const csvWords = this.parseCsvContent(content);
+      this.logger.log(`Found ${csvWords.length} words in uploaded CSV`);
+      return await this.processCsvRecords(csvWords);
+    } catch (error) {
+      const errorMessage = (error instanceof Error) ? error.message : String(error);
+      this.logger.error(`CSV upload import failed: ${errorMessage}`);
+      throw new Error(`CSV upload import failed: ${errorMessage}`);
     }
   }
 
