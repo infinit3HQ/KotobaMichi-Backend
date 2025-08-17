@@ -25,7 +25,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@kotobamichi-db:5432/kotobamichi
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/kotobamichi
     depends_on:
       db:
         condition: service_healthy
@@ -40,8 +40,14 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://postgres:postgres@kotobamichi-db:5432/kotobamichi
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/kotobamichi
       - PORT=3000
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SAMESITE=${COOKIE_SAMESITE:-lax}
+      - ACCESS_TOKEN_EXPIRES_IN=${ACCESS_TOKEN_EXPIRES_IN:-15m}
+      - REFRESH_TOKEN_EXPIRES_IN=${REFRESH_TOKEN_EXPIRES_IN:-7d}
+      - COOKIE_SECRET=${COOKIE_SECRET:-}
     ports:
       - "3000:3000"
     depends_on:

@@ -15,6 +15,12 @@ services:
     image: kotobamichi-backend:local
     environment:
       - NODE_ENV=development
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SAMESITE=${COOKIE_SAMESITE:-lax}
+      - ACCESS_TOKEN_EXPIRES_IN=${ACCESS_TOKEN_EXPIRES_IN:-15m}
+      - REFRESH_TOKEN_EXPIRES_IN=${REFRESH_TOKEN_EXPIRES_IN:-7d}
+      - COOKIE_SECRET=${COOKIE_SECRET:-}
     volumes:
       # Mount source code for hot reloading in development
       - ./src:/app/src:ro
