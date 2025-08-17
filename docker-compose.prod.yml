@@ -41,6 +41,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3000}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
+      ACCESS_TOKEN_EXPIRES_IN: ${ACCESS_TOKEN_EXPIRES_IN}
+      REFRESH_TOKEN_EXPIRES_IN: ${REFRESH_TOKEN_EXPIRES_IN}
+      COOKIE_SECRET: ${COOKIE_SECRET}
     # port expose blocked and use internal acess only for better security
     # ports:
     #   - '${PORT:-3000}:${PORT:-3000}'

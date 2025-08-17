@@ -30,6 +30,26 @@ on:
         description: 'Override JWT_EXPIRES_IN (optional, default 7d)'
         required: false
         type: string
+      access_token_expires_in:
+        description: 'Override ACCESS_TOKEN_EXPIRES_IN (optional, default 15m)'
+        required: false
+        type: string
+      refresh_token_expires_in:
+        description: 'Override REFRESH_TOKEN_EXPIRES_IN (optional, default 7d)'
+        required: false
+        type: string
+      cookie_secure:
+        description: 'COOKIE_SECURE (true/false)'
+        required: false
+        type: string
+      cookie_samesite:
+        description: 'COOKIE_SAMESITE (none|lax|strict)'
+        required: false
+        type: string
+      cors_origin:
+        description: 'CORS_ORIGIN (CSV of origins)'
+        required: false
+        type: string
       admin_email:
         description: 'Set ADMIN_EMAIL (optional)'
         required: false
@@ -85,6 +105,11 @@ jobs:
           JWT_EXPIRES_IN_INPUT: ${{ inputs.jwt_expires_in }}
           ADMIN_EMAIL_INPUT: ${{ inputs.admin_email }}
           ADMIN_PASSWORD_INPUT: ${{ inputs.admin_password }}
+          ACCESS_TOKEN_EXPIRES_IN_INPUT: ${{ inputs.access_token_expires_in }}
+          REFRESH_TOKEN_EXPIRES_IN_INPUT: ${{ inputs.refresh_token_expires_in }}
+          COOKIE_SECURE_INPUT: ${{ inputs.cookie_secure }}
+          COOKIE_SAMESITE_INPUT: ${{ inputs.cookie_samesite }}
+          CORS_ORIGIN_INPUT: ${{ inputs.cors_origin }}
 
           PORT_VAR: ${{ vars.PORT }}
           DB_PORT_VAR: ${{ vars.DB_PORT }}
@@ -92,6 +117,11 @@ jobs:
           POSTGRES_USER_VAR: ${{ vars.POSTGRES_USER }}
           DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
           JWT_EXPIRES_IN_VAR: ${{ vars.JWT_EXPIRES_IN }}
+          ACCESS_TOKEN_EXPIRES_IN_VAR: ${{ vars.ACCESS_TOKEN_EXPIRES_IN }}
+          REFRESH_TOKEN_EXPIRES_IN_VAR: ${{ vars.REFRESH_TOKEN_EXPIRES_IN }}
+          COOKIE_SECURE_VAR: ${{ vars.COOKIE_SECURE }}
+          COOKIE_SAMESITE_VAR: ${{ vars.COOKIE_SAMESITE }}
+          CORS_ORIGIN_VAR: ${{ vars.CORS_ORIGIN }}
           ADMIN_EMAIL_VAR: ${{ vars.ADMIN_EMAIL }}
 
           POSTGRES_DB_SECRET: ${{ secrets.PROD_POSTGRES_DB }}
@@ -100,6 +130,11 @@ jobs:
           DATABASE_URL_SECRET: ${{ secrets.PROD_DATABASE_URL }}
           JWT_SECRET_SECRET: ${{ secrets.PROD_JWT_SECRET }}
           JWT_EXPIRES_IN_SECRET: ${{ secrets.PROD_JWT_EXPIRES_IN }}
+          ACCESS_TOKEN_EXPIRES_IN_SECRET: ${{ secrets.PROD_ACCESS_TOKEN_EXPIRES_IN }}
+          REFRESH_TOKEN_EXPIRES_IN_SECRET: ${{ secrets.PROD_REFRESH_TOKEN_EXPIRES_IN }}
+          COOKIE_SECURE_SECRET: ${{ secrets.PROD_COOKIE_SECURE }}
+          COOKIE_SAMESITE_SECRET: ${{ secrets.PROD_COOKIE_SAMESITE }}
+          CORS_ORIGIN_SECRET: ${{ secrets.PROD_CORS_ORIGIN }}
           ADMIN_EMAIL_SECRET: ${{ secrets.PROD_ADMIN_EMAIL }}
           ADMIN_PASSWORD_SECRET: ${{ secrets.PROD_ADMIN_PASSWORD }}
         run: |
@@ -113,6 +148,11 @@ jobs:
           POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
           JWT_SECRET="${JWT_SECRET_SECRET:-}"
           JWT_EXPIRES_IN="${JWT_EXPIRES_IN_INPUT:-}"; [ -n "$JWT_EXPIRES_IN" ] || JWT_EXPIRES_IN="${JWT_EXPIRES_IN_SECRET:-}"; [ -n "$JWT_EXPIRES_IN" ] || JWT_EXPIRES_IN="${JWT_EXPIRES_IN_VAR:-7d}"
+          ACCESS_TOKEN_EXPIRES_IN="${ACCESS_TOKEN_EXPIRES_IN_INPUT:-}"; [ -n "$ACCESS_TOKEN_EXPIRES_IN" ] || ACCESS_TOKEN_EXPIRES_IN="${ACCESS_TOKEN_EXPIRES_IN_SECRET:-}"; [ -n "$ACCESS_TOKEN_EXPIRES_IN" ] || ACCESS_TOKEN_EXPIRES_IN="${ACCESS_TOKEN_EXPIRES_IN_VAR:-15m}"
+          REFRESH_TOKEN_EXPIRES_IN="${REFRESH_TOKEN_EXPIRES_IN_INPUT:-}"; [ -n "$REFRESH_TOKEN_EXPIRES_IN" ] || REFRESH_TOKEN_EXPIRES_IN="${REFRESH_TOKEN_EXPIRES_IN_SECRET:-}"; [ -n "$REFRESH_TOKEN_EXPIRES_IN" ] || REFRESH_TOKEN_EXPIRES_IN="${REFRESH_TOKEN_EXPIRES_IN_VAR:-7d}"
+          COOKIE_SECURE="${COOKIE_SECURE_INPUT:-}"; [ -n "$COOKIE_SECURE" ] || COOKIE_SECURE="${COOKIE_SECURE_SECRET:-}"; [ -n "$COOKIE_SECURE" ] || COOKIE_SECURE="${COOKIE_SECURE_VAR:-true}"
+          COOKIE_SAMESITE="${COOKIE_SAMESITE_INPUT:-}"; [ -n "$COOKIE_SAMESITE" ] || COOKIE_SAMESITE="${COOKIE_SAMESITE_SECRET:-}"; [ -n "$COOKIE_SAMESITE" ] || COOKIE_SAMESITE="${COOKIE_SAMESITE_VAR:-none}"
+          CORS_ORIGIN="${CORS_ORIGIN_INPUT:-}"; [ -n "$CORS_ORIGIN" ] || CORS_ORIGIN="${CORS_ORIGIN_SECRET:-}"; [ -n "$CORS_ORIGIN" ] || CORS_ORIGIN="${CORS_ORIGIN_VAR:-}"
           ADMIN_EMAIL="${ADMIN_EMAIL_INPUT:-}"; [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="${ADMIN_EMAIL_SECRET:-}"; [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="${ADMIN_EMAIL_VAR:-}"
           ADMIN_PASSWORD="${ADMIN_PASSWORD_INPUT:-${ADMIN_PASSWORD_SECRET:-}}"
 
@@ -146,6 +186,11 @@ jobs:
             echo "DATABASE_URL=$DATABASE_URL"
             echo "JWT_SECRET=$JWT_SECRET"
             echo "JWT_EXPIRES_IN=$JWT_EXPIRES_IN"
+            echo "ACCESS_TOKEN_EXPIRES_IN=$ACCESS_TOKEN_EXPIRES_IN"
+            echo "REFRESH_TOKEN_EXPIRES_IN=$REFRESH_TOKEN_EXPIRES_IN"
+            echo "COOKIE_SECURE=$COOKIE_SECURE"
+            echo "COOKIE_SAMESITE=$COOKIE_SAMESITE"
+            if [ -n "$CORS_ORIGIN" ]; then echo "CORS_ORIGIN=$CORS_ORIGIN"; fi
             if [ -n "$ADMIN_EMAIL" ]; then echo "ADMIN_EMAIL=$ADMIN_EMAIL"; fi
             if [ -n "$ADMIN_PASSWORD" ]; then echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"; fi
           } > .env

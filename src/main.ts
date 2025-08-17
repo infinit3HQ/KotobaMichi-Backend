@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
 	const logger = new Logger('Bootstrap');
@@ -10,9 +11,16 @@ async function bootstrap() {
 			logger: ['error', 'warn', 'log', 'debug', 'verbose'],
 		});
 
-		// Enable CORS
-		app.enableCors();
-		logger.log('CORS enabled');
+		// Enable CORS with credentials for cookie-based auth
+		app.enableCors({
+			origin: process.env['CORS_ORIGIN']?.split(',').map((s) => s.trim()) || true,
+			credentials: true,
+		});
+		logger.log('CORS enabled with credentials');
+
+		// Cookie parser for reading HttpOnly cookies
+		app.use(cookieParser(process.env['COOKIE_SECRET'] || undefined));
+		logger.log('Cookie parser enabled');
 
 		// Global validation pipe
 		app.useGlobalPipes(

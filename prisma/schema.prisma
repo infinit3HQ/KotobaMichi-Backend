@@ -27,8 +27,9 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  createdQuizzes Quiz[]        @relation("QuizCreator")
+  createdQuizzes Quiz[]         @relation("QuizCreator")
   quizAttempts   QuizAttempt[]
+  refreshToken   RefreshToken[]
 
   @@map("users")
 }
@@ -94,4 +95,21 @@ model QuizAttempt {
   quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
   @@map("quiz_attempts")
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  jti          String    @unique
+  userId       String
+  tokenHash    String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
