@@ -5,6 +5,8 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 ## Features
 
 - 🔐 **Authentication & Authorization** - JWT-based auth with role-based access control
+	- Secure HttpOnly cookies for access/refresh tokens
+	- Refresh token rotation with reuse detection and server-side revocation
 - 📚 **Vocabulary Management** - CRUD operations for Japanese words with hiragana, katakana, kanji, and meanings
 - 📥 **CSV Import System** - Optimized bulk import with hash-based duplicate detection and batch processing
 - 🧩 **Quiz System** - Create and take quizzes with automatic scoring
@@ -22,35 +24,41 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 
 ## API Endpoints
 
+All routes are prefixed with `/v1`.
+
 ### Authentication (`/auth`)
-- `POST /auth/register` - Register a new user
-- `POST /auth/login` - Login user and get JWT token
+- `POST /v1/auth/register` - Register a new user; sets HttpOnly cookies and returns `{ access_token, refresh_token, user }`
+- `POST /v1/auth/register/admin` - Register a new admin (requires existing admin; guarded by JWT + role)
+- `POST /v1/auth/login` - Login; sets HttpOnly cookies and returns `{ access_token, refresh_token, user }`
+- `POST /v1/auth/logout` - Revoke refresh tokens and clear cookies; returns `{ success: true }`
+- `GET /v1/auth/validate` - Validate current access cookie; returns `{ valid: true, user }` or 401 and clears cookies
+- `POST /v1/auth/refresh` - Rotate tokens using refresh cookie; sets new cookies and returns `{ access_token, refresh_token, user }`
 
 ### Vocabulary (`/words`)
-- `GET /words` - Get paginated list of words
-- `GET /words/:id` - Get single word details
-- `POST /words` - Create new word (Admin only)
-- `PATCH /words/:id` - Update word (Admin only)
-- `DELETE /words/:id` - Delete word (Admin only)
-- `POST /words/import/csv` - Import words from CSV file (Admin only)
-- `GET /words/import/stats` - Get import statistics (Admin only)
-- `DELETE /words/import/clear-all` - Clear all words (Admin only)
+- `GET /v1/words` - Get paginated list of words
+- `GET /v1/words/:id` - Get single word details
+- `POST /v1/words` - Create new word (Admin only)
+- `PATCH /v1/words/:id` - Update word (Admin only)
+- `DELETE /v1/words/:id` - Delete word (Admin only)
+- `POST /v1/words/import/csv` - Import words from CSV file (Admin only)
+- `GET /v1/words/import/stats` - Get import statistics (Admin only)
+- `DELETE /v1/words/import/clear-all` - Clear all words (Admin only)
 
 ### Quizzes (`/quizzes`)
-- `GET /quizzes` - Get all public quizzes
-- `GET /quizzes/my-quizzes` - Get user's created quizzes
-- `GET /quizzes/:id` - Get quiz details with words
-- `POST /quizzes` - Create new quiz
-- `DELETE /quizzes/:id` - Delete quiz (creator/admin only)
-- `POST /quizzes/:id/submit` - Submit quiz answers and get results
+- `GET /v1/quizzes` - Get all public quizzes
+- `GET /v1/quizzes/my-quizzes` - Get user's created quizzes
+- `GET /v1/quizzes/:id` - Get quiz details with words
+- `POST /v1/quizzes` - Create new quiz
+- `DELETE /v1/quizzes/:id` - Delete quiz (creator/admin only)
+- `POST /v1/quizzes/:id/submit` - Submit quiz answers and get results
 
 ### Users (`/users`)
-- `GET /users/me` - Get user profile
-- `GET /users/me/attempts` - Get user's quiz attempt history (paginated)
-- `GET /users/me/stats` - Get user's learning statistics
+- `GET /v1/users/me` - Get user profile
+- `GET /v1/users/me/attempts` - Get user's quiz attempt history (paginated)
+- `GET /v1/users/me/stats` - Get user's learning statistics
 
 ### Health Check
-- `GET /health` - API health check
+- `GET /v1/health` - API health check
 
 ## Installation
 
@@ -94,15 +102,37 @@ pnpm run import:csv
 pnpm run start:dev
 ```
 
-The API will be available at `http://localhost:3000`
+Base URL: `http://localhost:3000/v1`
+
+Authentication uses secure HttpOnly cookies. When running cross-origin in production, ensure HTTPS and proper CORS/ cookie settings (see Environment Variables below).
 
 ## Environment Variables
 
+See `.env.example` for a complete list. Key settings:
+
 ```env
+# Core
 DATABASE_URL="postgresql://username:password@localhost:5432/kotoba_michi"
-JWT_SECRET="your-super-secret-jwt-key"
 PORT=3000
+
+# JWT
+JWT_SECRET="your-super-secret-jwt-key"      # required
+JWT_EXPIRES_IN=7d                            # default for JwtModule (not used for access/refresh below)
+ACCESS_TOKEN_EXPIRES_IN=15m                  # override per token
+REFRESH_TOKEN_EXPIRES_IN=7d
+
+# Cookies & CORS
+CORS_ORIGIN=http://localhost:5173            # CSV of allowed origins
+COOKIE_SECRET=dev-cookie-secret              # for cookie-parser (optional)
+COOKIE_SECURE=false                          # true in production (HTTPS)
+COOKIE_SAMESITE=lax                          # none|lax|strict
 ```
+
+Notes:
+- Tokens are issued as cookies: `access_token` (short-lived) and `refresh_token` (longer-lived).
+- `/v1/auth/refresh` rotates refresh tokens and revokes previous ones; suspicious reuse revokes all user tokens.
+- Bearer Authorization works, but cookies are preferred and used by default.
+- Frontend integration tips are in [FRONTEND_AUTH_GUIDE.md](./FRONTEND_AUTH_GUIDE.md).
 
 ## Database Schema
 
