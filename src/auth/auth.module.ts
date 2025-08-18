@@ -8,11 +8,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth/jwt-auth.guard';
 import { RolesGuard } from './roles/roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     PassportModule,
-    PrismaModule,
+  PrismaModule,
+  EmailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {

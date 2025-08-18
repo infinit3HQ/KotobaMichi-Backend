@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { WordsModule } from './words/words.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
 import { UsersModule } from './users/users.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
 	imports: [
@@ -16,6 +17,7 @@ import { UsersModule } from './users/users.module';
 		}),
 		PrismaModule,
 		AuthModule,
+		EmailModule,
 		WordsModule,
 		QuizzesModule,
 		UsersModule,

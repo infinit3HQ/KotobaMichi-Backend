@@ -14,6 +14,11 @@ import { JwtAuthGuard } from './jwt-auth/jwt-auth.guard';
 import { RolesGuard } from './roles/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { Response, Request } from 'express';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -62,5 +67,32 @@ export class AuthController {
 		const result = await this.authService.refreshFromCookies(req, res);
 		this.authService.setAuthCookies(res, result);
 		return result;
+	}
+
+	@Post('verify-email')
+	async verifyEmail(@Body() body: VerifyEmailDto) {
+		return this.authService.verifyEmail(body.token);
+	}
+
+	@Post('resend-verification')
+	async resendVerification(@Body() dto: ResendVerificationDto) {
+		return this.authService.resendVerification(dto.email);
+	}
+
+	@Post('forgot-password')
+	async forgotPassword(@Body() dto: ForgotPasswordDto) {
+		return this.authService.forgotPassword(dto.email);
+	}
+
+	@Post('reset-password')
+	async resetPassword(@Body() dto: ResetPasswordDto) {
+		return this.authService.resetPassword(dto.token, dto.newPassword);
+	}
+
+	@UseGuards(JwtAuthGuard)
+	@Post('change-password')
+	async changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
+		const userId = (req as any).user?.userId;
+		return this.authService.changePassword(userId, dto.currentPassword, dto.newPassword);
 	}
 }

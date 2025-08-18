@@ -12,13 +12,15 @@ import { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
 	constructor(
 		private prisma: PrismaService,
 		private jwtService: JwtService,
-		private config: ConfigService
+		private config: ConfigService,
+		private emailService: EmailService
 	) {}
 
 	private getCookieOptions() {
@@ -139,31 +141,13 @@ export class AuthService {
 			},
 		});
 
-		// Generate tokens
-		const access = this.signAccessToken(user);
-		const { token: refresh, jti } = this.signRefreshToken(user);
+		// create verification token and send email
+		await this.issueAndSendEmailVerification(user.id, user.email);
 
-		// Persist refresh token
-		await this.prisma.refreshToken.create({
-			data: {
-				jti,
-				userId: user.id,
-				tokenHash: this.hashToken(refresh),
-				expiresAt: this.addMs(
-					new Date(),
-					this.parseTTLToMs(this.refreshTokenTTL())
-				),
-			},
-		});
 
+		// For security, we don't auto-login until email verified
 		return {
-			access_token: access,
-			refresh_token: refresh,
-			user: {
-				id: user.id,
-				email: user.email,
-				role: user.role,
-			},
+			message: 'Registration successful. Please verify your email to log in.' as const,
 		};
 	}
 
@@ -237,6 +221,10 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid credentials');
 		}
 
+		if (!user.isEmailVerified) {
+			throw new UnauthorizedException('Email not verified');
+		}
+
 		// Generate tokens
 		const access = this.signAccessToken(user);
 		const { token: refresh, jti } = this.signRefreshToken(user);
@@ -263,6 +251,143 @@ export class AuthService {
 				role: user.role,
 			},
 		};
+	}
+
+	private verificationTokenTTL(): string {
+		return this.config.get<string>('EMAIL_VERIFICATION_EXPIRES_IN') || '1d';
+	}
+
+	private buildVerificationLink(token: string): string {
+		const base = this.config.get<string>('APP_URL') || 'http://localhost:3000';
+		// The frontend should have a route like /verify-email?token=...
+		return `${base.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(
+			token
+		)}`;
+	}
+
+	private passwordResetTTL(): string {
+		return this.config.get<string>('PASSWORD_RESET_EXPIRES_IN') || '1h';
+	}
+
+	private buildPasswordResetLink(token: string): string {
+		const base = this.config.get<string>('APP_URL') || 'http://localhost:3000';
+		return `${base.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(
+			token
+		)}`;
+	}
+
+	private async issueAndSendEmailVerification(userId: string, email: string) {
+		// Invalidate previous tokens
+		await this.prisma.emailVerificationToken.updateMany({
+			where: { userId, usedAt: null },
+			data: { usedAt: new Date() },
+		});
+		const raw = uuidv4() + '.' + uuidv4(); // long random string
+		const tokenHash = this.hashToken(raw);
+		const expiresAt = this.addMs(new Date(), this.parseTTLToMs(this.verificationTokenTTL()));
+		await this.prisma.emailVerificationToken.create({
+			data: { userId, tokenHash, expiresAt },
+		});
+		const link = this.buildVerificationLink(raw);
+		await this.emailService.sendVerificationEmail(email, link);
+	}
+
+	async verifyEmail(token: string) {
+		const tokenHash = this.hashToken(token);
+		const rec = await this.prisma.emailVerificationToken.findUnique({
+			where: { tokenHash },
+		});
+		if (!rec || rec.usedAt || rec.expiresAt.getTime() < Date.now()) {
+			throw new UnauthorizedException('Invalid or expired token');
+		}
+		await this.prisma.$transaction([
+			this.prisma.user.update({
+				where: { id: rec.userId },
+				data: { isEmailVerified: true },
+			}),
+			this.prisma.emailVerificationToken.update({
+				where: { tokenHash },
+				data: { usedAt: new Date() },
+			}),
+		]);
+		return { success: true } as const;
+	}
+
+	async resendVerification(email: string) {
+		const user = await this.prisma.user.findUnique({ where: { email } });
+		if (!user) return { success: true } as const; // do not reveal users
+		if (user.isEmailVerified) return { success: true } as const;
+		await this.issueAndSendEmailVerification(user.id, user.email);
+		return { success: true } as const;
+	}
+
+	async forgotPassword(email: string) {
+		const user = await this.prisma.user.findUnique({ where: { email } });
+		if (!user) return { success: true } as const; // do not reveal existence
+		// Invalidate previous tokens
+		await this.prisma.passwordResetToken.updateMany({
+			where: { userId: user.id, usedAt: null },
+			data: { usedAt: new Date() },
+		});
+		const raw = uuidv4() + '.' + uuidv4();
+		const tokenHash = this.hashToken(raw);
+		const expiresAt = this.addMs(
+			new Date(),
+			this.parseTTLToMs(this.passwordResetTTL())
+		);
+		await this.prisma.passwordResetToken.create({
+			data: { userId: user.id, tokenHash, expiresAt },
+		});
+		const link = this.buildPasswordResetLink(raw);
+		await this.emailService.sendPasswordResetEmail(email, link);
+		return { success: true } as const;
+	}
+
+	async resetPassword(token: string, newPassword: string) {
+		const tokenHash = this.hashToken(token);
+		const rec = await this.prisma.passwordResetToken.findUnique({
+			where: { tokenHash },
+		});
+		if (!rec || rec.usedAt || rec.expiresAt.getTime() < Date.now()) {
+			throw new UnauthorizedException('Invalid or expired token');
+		}
+		const hashed = await bcrypt.hash(newPassword, 10);
+		await this.prisma.$transaction([
+			this.prisma.user.update({
+				where: { id: rec.userId },
+				data: { password: hashed },
+			}),
+			this.prisma.passwordResetToken.update({
+				where: { tokenHash },
+				data: { usedAt: new Date() },
+			}),
+			// Revoke all refresh tokens to log out from all devices
+			this.prisma.refreshToken.updateMany({
+				where: { userId: rec.userId, revokedAt: null },
+				data: { revokedAt: new Date() },
+			}),
+		]);
+		return { success: true } as const;
+	}
+
+	async changePassword(
+		userId: string,
+		currentPassword: string,
+		newPassword: string
+	) {
+		const user = await this.prisma.user.findUnique({ where: { id: userId } });
+		if (!user) throw new UnauthorizedException('User not found');
+		const ok = await bcrypt.compare(currentPassword, user.password);
+		if (!ok) throw new UnauthorizedException('Current password incorrect');
+		const hashed = await bcrypt.hash(newPassword, 10);
+		await this.prisma.$transaction([
+			this.prisma.user.update({ where: { id: userId }, data: { password: hashed } }),
+			this.prisma.refreshToken.updateMany({
+				where: { userId, revokedAt: null },
+				data: { revokedAt: new Date() },
+			}),
+		]);
+		return { success: true } as const;
 	}
 
 	async refreshFromCookies(req?: Request, res?: Response) {
