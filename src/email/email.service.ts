@@ -17,13 +17,36 @@ export class EmailService {
     if (this.transporter) return this.transporter;
 
     const host = this.config.get<string>('SMTP_HOST');
-    const port = parseInt(this.config.get<string>('SMTP_PORT') || '587', 10);
+    const portStr = this.config.get<string>('SMTP_PORT');
     const user = this.config.get<string>('SMTP_USER');
     const pass = this.config.get<string>('SMTP_PASS');
+
+    // Validate port: if not provided, fall back to 587; if provided, ensure it's a number in 1..65535
+    let port = 587;
+    let portInvalid = false;
+    if (portStr != null && portStr.trim() !== '') {
+      const parsed = Number.parseInt(portStr, 10);
+      if (Number.isNaN(parsed) || parsed < 1 || parsed > 65535) {
+        portInvalid = true;
+      } else {
+        port = parsed;
+      }
+    }
+
+    // Compute secure only after we have a validated numeric port
     const secure = (this.config.get<string>('SMTP_SECURE') || 'false').toLowerCase() === 'true' || port === 465;
 
-    if (!host || !user || !pass) {
-      throw new Error('SMTP configuration is missing. Please set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS.');
+    // Collect any missing or invalid config keys so we can throw a single clear error
+    const missing: string[] = [];
+    if (!host) missing.push('SMTP_HOST');
+    if (!user) missing.push('SMTP_USER');
+    if (!pass) missing.push('SMTP_PASS');
+    if (portInvalid) missing.push('SMTP_PORT');
+
+    if (missing.length > 0) {
+      throw new Error(
+        `SMTP configuration is missing or invalid. Please set/repair the following env vars: ${missing.join(', ')}.`,
+      );
     }
 
     this.transporter = nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
