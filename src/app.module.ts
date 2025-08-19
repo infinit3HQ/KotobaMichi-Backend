@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ThrottlerGuard, ThrottlerModule, seconds } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -15,6 +17,12 @@ import { EmailModule } from './email/email.module';
 			isGlobal: true,
 			envFilePath: '.env',
 		}),
+		ThrottlerModule.forRoot([
+			{
+				ttl: seconds(60), // 60 seconds in ms
+				limit: 100, // default: 100 req/min per IP
+			},
+		]),
 		PrismaModule,
 		AuthModule,
 		EmailModule,
@@ -23,6 +31,6 @@ import { EmailModule } from './email/email.module';
 		UsersModule,
 	],
 	controllers: [AppController],
-	providers: [AppService],
+	providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
