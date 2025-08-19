@@ -392,7 +392,8 @@ export class AuthService {
 				data: { userId, tokenHash, expiresAt },
 			});
 			const link = this.buildVerificationLink(raw);
-			await this.emailService.sendVerificationEmail(email, link);
+			const displayName = email.split('@')[0];
+			await this.emailService.sendVerificationEmail(email, link, displayName);
 			this.logger.log(`Verification email sent to: ${email}`);
 		} catch (err: any) {
 			this.logger.error(
@@ -472,7 +473,8 @@ export class AuthService {
 			data: { userId: user.id, tokenHash, expiresAt },
 		});
 		const link = this.buildPasswordResetLink(raw);
-		await this.emailService.sendPasswordResetEmail(email, link);
+		const displayName = email.split('@')[0];
+		await this.emailService.sendPasswordResetEmail(email, link, displayName);
 		this.logger.log(`Password reset email sent to: ${email}`);
 		return { success: true } as const;
 	}
