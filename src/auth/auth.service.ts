@@ -2,6 +2,9 @@ import {
 	Injectable,
 	UnauthorizedException,
 	ConflictException,
+	Logger,
+	HttpException,
+	HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,14 +15,102 @@ import { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
 	constructor(
 		private prisma: PrismaService,
 		private jwtService: JwtService,
-		private config: ConfigService
+		private config: ConfigService,
+		private emailService: EmailService
 	) {}
+
+	private readonly logger = new Logger(AuthService.name);
+
+	// ===== Rate-limit helpers for email sends =====
+	private verificationCooldownSeconds(): number {
+		const v = this.config.get<string>('EMAIL_VERIFICATION_COOLDOWN_SECONDS');
+		return v ? Math.max(0, parseInt(v, 10)) : 60; // default 60s
+	}
+
+	private verificationDailyLimit(): number {
+		const v = this.config.get<string>('EMAIL_VERIFICATION_DAILY_LIMIT');
+		return v ? Math.max(1, parseInt(v, 10)) : 10; // default 10/day
+	}
+
+	private resetCooldownSeconds(): number {
+		const v = this.config.get<string>('PASSWORD_RESET_COOLDOWN_SECONDS');
+		return v ? Math.max(0, parseInt(v, 10)) : 60; // default 60s
+	}
+
+	private resetDailyLimit(): number {
+		const v = this.config.get<string>('PASSWORD_RESET_DAILY_LIMIT');
+		return v ? Math.max(1, parseInt(v, 10)) : 10; // default 10/day
+	}
+
+	private formatWait(ms: number) {
+		const sec = Math.ceil(ms / 1000);
+		return `${sec}s`;
+	}
+
+	private async enforceVerificationRateLimit(userId: string) {
+		const cooldownMs = this.verificationCooldownSeconds() * 1000;
+		const now = Date.now();
+		const last = await this.prisma.emailVerificationToken.findFirst({
+			where: { userId },
+			orderBy: { createdAt: 'desc' },
+		});
+		if (last) {
+			const elapsed = now - last.createdAt.getTime();
+			if (elapsed < cooldownMs) {
+				const wait = this.formatWait(cooldownMs - elapsed);
+				throw new HttpException(
+					`Please wait ${wait} before requesting another verification email.`,
+					HttpStatus.TOO_MANY_REQUESTS
+				);
+			}
+		}
+		const since = new Date(now - 24 * 60 * 60 * 1000);
+		const dailyCount = await this.prisma.emailVerificationToken.count({
+			where: { userId, createdAt: { gte: since } },
+		});
+		if (dailyCount >= this.verificationDailyLimit()) {
+			throw new HttpException(
+				'Daily limit for verification emails reached. Try again later.',
+				HttpStatus.TOO_MANY_REQUESTS
+			);
+		}
+	}
+
+	private async enforcePasswordResetRateLimit(userId: string) {
+		const cooldownMs = this.resetCooldownSeconds() * 1000;
+		const now = Date.now();
+		const last = await this.prisma.passwordResetToken.findFirst({
+			where: { userId },
+			orderBy: { createdAt: 'desc' },
+		});
+		if (last) {
+			const elapsed = now - last.createdAt.getTime();
+			if (elapsed < cooldownMs) {
+				const wait = this.formatWait(cooldownMs - elapsed);
+				throw new HttpException(
+					`Please wait ${wait} before requesting another password reset email.`,
+					HttpStatus.TOO_MANY_REQUESTS
+				);
+			}
+		}
+		const since = new Date(now - 24 * 60 * 60 * 1000);
+		const dailyCount = await this.prisma.passwordResetToken.count({
+			where: { userId, createdAt: { gte: since } },
+		});
+		if (dailyCount >= this.resetDailyLimit()) {
+			throw new HttpException(
+				'Daily limit for password reset emails reached. Try again later.',
+				HttpStatus.TOO_MANY_REQUESTS
+			);
+		}
+	}
 
 	private getCookieOptions() {
 		const isProd =
@@ -124,6 +215,7 @@ export class AuthService {
 		});
 
 		if (existingUser) {
+			this.logger.warn(`Registration attempt with existing email: ${email}`);
 			throw new ConflictException('User with this email already exists');
 		}
 
@@ -139,31 +231,14 @@ export class AuthService {
 			},
 		});
 
-		// Generate tokens
-		const access = this.signAccessToken(user);
-		const { token: refresh, jti } = this.signRefreshToken(user);
+		// create verification token and send email
+		await this.issueAndSendEmailVerification(user.id, user.email);
+		this.logger.log(`User registered and verification email queued: ${email}`);
 
-		// Persist refresh token
-		await this.prisma.refreshToken.create({
-			data: {
-				jti,
-				userId: user.id,
-				tokenHash: this.hashToken(refresh),
-				expiresAt: this.addMs(
-					new Date(),
-					this.parseTTLToMs(this.refreshTokenTTL())
-				),
-			},
-		});
-
+		// For security, we don't auto-login until email verified
 		return {
-			access_token: access,
-			refresh_token: refresh,
-			user: {
-				id: user.id,
-				email: user.email,
-				role: user.role,
-			},
+			message:
+				'Registration successful. Please verify your email to log in.' as const,
 		};
 	}
 
@@ -176,6 +251,9 @@ export class AuthService {
 		});
 
 		if (existingUser) {
+			this.logger.warn(
+				`Admin registration attempt with existing email: ${email}`
+			);
 			throw new ConflictException('User with this email already exists');
 		}
 
@@ -208,6 +286,7 @@ export class AuthService {
 			},
 		});
 
+		this.logger.log(`Admin user registered: ${user.email}`);
 		return {
 			access_token: access,
 			refresh_token: refresh,
@@ -228,13 +307,20 @@ export class AuthService {
 		});
 
 		if (!user) {
+			this.logger.warn(`Login failed (no user): ${email}`);
 			throw new UnauthorizedException('Invalid credentials');
 		}
 
 		// Verify password
 		const isPasswordValid = await bcrypt.compare(password, user.password);
 		if (!isPasswordValid) {
+			this.logger.warn(`Login failed (bad password): ${email}`);
 			throw new UnauthorizedException('Invalid credentials');
+		}
+
+		if (!user.isEmailVerified) {
+			this.logger.warn(`Login blocked, email not verified: ${email}`);
+			throw new UnauthorizedException('Email not verified');
 		}
 
 		// Generate tokens
@@ -254,6 +340,7 @@ export class AuthService {
 			},
 		});
 
+		this.logger.log(`User logged in: ${email}`);
 		return {
 			access_token: access,
 			refresh_token: refresh,
@@ -265,12 +352,204 @@ export class AuthService {
 		};
 	}
 
+	private verificationTokenTTL(): string {
+		return this.config.get<string>('EMAIL_VERIFICATION_EXPIRES_IN') || '1d';
+	}
+
+	private buildVerificationLink(token: string): string {
+		const base = this.config.get<string>('APP_URL') || 'http://localhost:3000';
+		// The frontend should have a route like /verify-email?token=...
+		return `${base.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(
+			token
+		)}`;
+	}
+
+	private passwordResetTTL(): string {
+		return this.config.get<string>('PASSWORD_RESET_EXPIRES_IN') || '1h';
+	}
+
+	private buildPasswordResetLink(token: string): string {
+		const base = this.config.get<string>('APP_URL') || 'http://localhost:3000';
+		return `${base.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(
+			token
+		)}`;
+	}
+
+	private async issueAndSendEmailVerification(userId: string, email: string) {
+		try {
+			// Invalidate previous tokens
+			await this.prisma.emailVerificationToken.updateMany({
+				where: { userId, usedAt: null },
+				data: { usedAt: new Date() },
+			});
+			const raw = uuidv4() + '.' + uuidv4(); // long random string
+			const tokenHash = this.hashToken(raw);
+			const expiresAt = this.addMs(
+				new Date(),
+				this.parseTTLToMs(this.verificationTokenTTL())
+			);
+			await this.prisma.emailVerificationToken.create({
+				data: { userId, tokenHash, expiresAt },
+			});
+			const link = this.buildVerificationLink(raw);
+			const displayName = email.split('@')[0];
+			await this.emailService.sendVerificationEmail(email, link, displayName);
+			this.logger.log(`Verification email sent to: ${email}`);
+		} catch (err: any) {
+			this.logger.error(
+				`Failed to issue/send verification email for userId=${userId}`,
+				err?.stack || String(err)
+			);
+			throw err;
+		}
+	}
+
+	async verifyEmail(token: string) {
+		const tokenHash = this.hashToken(token);
+		const rec = await this.prisma.emailVerificationToken.findUnique({
+			where: { tokenHash },
+		});
+		if (!rec || rec.usedAt || rec.expiresAt.getTime() < Date.now()) {
+			this.logger.warn('Email verification failed: invalid or expired token');
+			throw new UnauthorizedException('Invalid or expired token');
+		}
+		await this.prisma.$transaction([
+			this.prisma.user.update({
+				where: { id: rec.userId },
+				data: { isEmailVerified: true },
+			}),
+			this.prisma.emailVerificationToken.update({
+				where: { tokenHash },
+				data: { usedAt: new Date() },
+			}),
+		]);
+		this.logger.log(`Email verified for userId=${rec.userId}`);
+		return { success: true } as const;
+	}
+
+	async resendVerification(email: string) {
+		const user = await this.prisma.user.findUnique({ where: { email } });
+		if (!user) {
+			this.logger.debug(
+				`Resend verification requested for non-existing email: ${email}`
+			);
+			return { success: true } as const; // do not reveal users
+		}
+		if (user.isEmailVerified) {
+			this.logger.debug(
+				`Resend verification skipped; already verified: ${email}`
+			);
+			return { success: true } as const;
+		}
+		// Per-user rate limiting (cooldown + daily cap)
+		await this.enforceVerificationRateLimit(user.id);
+		await this.issueAndSendEmailVerification(user.id, user.email);
+		this.logger.log(`Resent verification email to: ${email}`);
+		return { success: true } as const;
+	}
+
+	async forgotPassword(email: string) {
+		const user = await this.prisma.user.findUnique({ where: { email } });
+		if (!user) {
+			this.logger.debug(
+				`Forgot password requested for non-existing email: ${email}`
+			);
+			return { success: true } as const; // do not reveal existence
+		}
+		// Per-user rate limiting (cooldown + daily cap)
+		await this.enforcePasswordResetRateLimit(user.id);
+		// Invalidate previous tokens
+		await this.prisma.passwordResetToken.updateMany({
+			where: { userId: user.id, usedAt: null },
+			data: { usedAt: new Date() },
+		});
+		const raw = uuidv4() + '.' + uuidv4();
+		const tokenHash = this.hashToken(raw);
+		const expiresAt = this.addMs(
+			new Date(),
+			this.parseTTLToMs(this.passwordResetTTL())
+		);
+		await this.prisma.passwordResetToken.create({
+			data: { userId: user.id, tokenHash, expiresAt },
+		});
+		const link = this.buildPasswordResetLink(raw);
+		const displayName = email.split('@')[0];
+		await this.emailService.sendPasswordResetEmail(email, link, displayName);
+		this.logger.log(`Password reset email sent to: ${email}`);
+		return { success: true } as const;
+	}
+
+	async resetPassword(token: string, newPassword: string) {
+		const tokenHash = this.hashToken(token);
+		const rec = await this.prisma.passwordResetToken.findUnique({
+			where: { tokenHash },
+		});
+		if (!rec || rec.usedAt || rec.expiresAt.getTime() < Date.now()) {
+			this.logger.warn('Password reset failed: invalid or expired token');
+			throw new UnauthorizedException('Invalid or expired token');
+		}
+		const hashed = await bcrypt.hash(newPassword, 10);
+		await this.prisma.$transaction([
+			this.prisma.user.update({
+				where: { id: rec.userId },
+				data: { password: hashed },
+			}),
+			this.prisma.passwordResetToken.update({
+				where: { tokenHash },
+				data: { usedAt: new Date() },
+			}),
+			// Revoke all refresh tokens to log out from all devices
+			this.prisma.refreshToken.updateMany({
+				where: { userId: rec.userId, revokedAt: null },
+				data: { revokedAt: new Date() },
+			}),
+		]);
+		this.logger.log(`Password reset successful for userId=${rec.userId}`);
+		return { success: true } as const;
+	}
+
+	async changePassword(
+		userId: string,
+		currentPassword: string,
+		newPassword: string
+	) {
+		const user = await this.prisma.user.findUnique({ where: { id: userId } });
+		if (!user) {
+			this.logger.warn(`Change password failed: user not found (${userId})`);
+			throw new UnauthorizedException('User not found');
+		}
+		const ok = await bcrypt.compare(currentPassword, user.password);
+		if (!ok) {
+			this.logger.warn(
+				`Change password failed: incorrect current password (${user.email})`
+			);
+			throw new UnauthorizedException('Current password incorrect');
+		}
+		const hashed = await bcrypt.hash(newPassword, 10);
+		await this.prisma.$transaction([
+			this.prisma.user.update({
+				where: { id: userId },
+				data: { password: hashed },
+			}),
+			this.prisma.refreshToken.updateMany({
+				where: { userId, revokedAt: null },
+				data: { revokedAt: new Date() },
+			}),
+		]);
+		this.logger.log(
+			`Password changed and sessions revoked for userId=${userId}`
+		);
+		return { success: true } as const;
+	}
+
 	async refreshFromCookies(req?: Request, res?: Response) {
 		if (!req) {
+			this.logger.error('Refresh token flow failed: no request context');
 			throw new UnauthorizedException('No request context');
 		}
 		const token = req.cookies?.['refresh_token'];
 		if (!token) {
+			this.logger.warn('Refresh token missing in cookies');
 			throw new UnauthorizedException('Refresh token missing');
 		}
 
@@ -286,10 +565,12 @@ export class AuthService {
 				}
 			} catch {}
 			this.clearAuthCookies(res!);
+			this.logger.warn('Refresh token verification failed; tokens cleared');
 			throw new UnauthorizedException('Invalid refresh token');
 		}
 		if (payload?.type !== 'refresh' || !payload?.sub || !payload?.jti) {
 			this.clearAuthCookies(res!);
+			this.logger.warn('Refresh token payload invalid');
 			throw new UnauthorizedException('Invalid refresh token');
 		}
 
@@ -303,6 +584,7 @@ export class AuthService {
 		if (!user) {
 			await this.revokeRefreshTokenFamily(payload.jti).catch(() => {});
 			this.clearAuthCookies(res!);
+			this.logger.warn(`Refresh failed: user not found (sub=${payload.sub})`);
 			throw new UnauthorizedException('User not found');
 		}
 		// Constant-time hash comparison to prevent timing side-channels
@@ -322,6 +604,9 @@ export class AuthService {
 			// Reuse detection: revoke all user's tokens
 			await this.revokeAllUserRefreshTokens(user.id).catch(() => {});
 			this.clearAuthCookies(res!);
+			this.logger.warn(
+				`Refresh token invalid/revoked/expired for userId=${user.id}`
+			);
 			throw new UnauthorizedException('Refresh token revoked or invalid');
 		}
 
@@ -345,6 +630,7 @@ export class AuthService {
 
 		const access = this.signAccessToken(user);
 		const refresh = newRefresh;
+		this.logger.log(`Refresh token rotated for userId=${user.id}`);
 		return {
 			access_token: access,
 			refresh_token: refresh,
@@ -360,12 +646,14 @@ export class AuthService {
 		const token = req.cookies?.['access_token'];
 		if (!token) {
 			this.clearAuthCookies(res);
+			this.logger.warn('Access token missing in cookies');
 			throw new UnauthorizedException('No access token');
 		}
 		try {
 			const payload: any = await this.jwtService.verifyAsync(token);
 			if (payload?.type !== 'access') {
 				this.clearAuthCookies(res);
+				this.logger.warn('Invalid access token type');
 				throw new UnauthorizedException('Invalid access token');
 			}
 			// Fetch and return user for better UX
@@ -374,8 +662,12 @@ export class AuthService {
 			});
 			if (!user) {
 				this.clearAuthCookies(res);
+				this.logger.warn(
+					`Access token valid but user missing (sub=${payload.sub})`
+				);
 				throw new UnauthorizedException('User not found');
 			}
+			this.logger.debug(`Access token validated for userId=${user.id}`);
 			return {
 				valid: true,
 				user: {
@@ -386,6 +678,7 @@ export class AuthService {
 			} as const;
 		} catch {
 			this.clearAuthCookies(res);
+			this.logger.warn('Access token verification failed or expired');
 			throw new UnauthorizedException('Access token expired');
 		}
 	}
@@ -417,6 +710,9 @@ export class AuthService {
 			} catch {}
 		}
 		this.clearAuthCookies(res);
+		this.logger.log(
+			'User logged out (cookies cleared and refresh tokens revoked if present)'
+		);
 		return { success: true } as const;
 	}
 }

@@ -56,7 +56,24 @@ jobs:
           REFRESH_TOKEN_EXPIRES_IN_SECRET: ${{ secrets.PROD_REFRESH_TOKEN_EXPIRES_IN }}
           COOKIE_SECURE_SECRET: ${{ secrets.PROD_COOKIE_SECURE }}
           COOKIE_SAMESITE_SECRET: ${{ secrets.PROD_COOKIE_SAMESITE }}
+          COOKIE_SECRET_SECRET: ${{ secrets.PROD_COOKIE_SECRET }}
           CORS_ORIGIN_SECRET: ${{ secrets.PROD_CORS_ORIGIN }}
+          APP_URL_SECRET: ${{ secrets.PROD_APP_URL }}
+          # SMTP secrets (optional)
+          SMTP_HOST_SECRET: ${{ secrets.PROD_SMTP_HOST }}
+          SMTP_PORT_SECRET: ${{ secrets.PROD_SMTP_PORT }}
+          SMTP_SECURE_SECRET: ${{ secrets.PROD_SMTP_SECURE }}
+          SMTP_USER_SECRET: ${{ secrets.PROD_SMTP_USER }}
+          SMTP_PASS_SECRET: ${{ secrets.PROD_SMTP_PASS }}
+          SMTP_FROM_SECRET: ${{ secrets.PROD_SMTP_FROM }}
+          # Email verification / password reset rate-limit overrides (optional)
+          EMAIL_VERIFICATION_COOLDOWN_SECONDS_SECRET: ${{ secrets.PROD_EMAIL_VERIFICATION_COOLDOWN_SECONDS }}
+          EMAIL_VERIFICATION_DAILY_LIMIT_SECRET: ${{ secrets.PROD_EMAIL_VERIFICATION_DAILY_LIMIT }}
+          PASSWORD_RESET_COOLDOWN_SECONDS_SECRET: ${{ secrets.PROD_PASSWORD_RESET_COOLDOWN_SECONDS }}
+          PASSWORD_RESET_DAILY_LIMIT_SECRET: ${{ secrets.PROD_PASSWORD_RESET_DAILY_LIMIT }}
+          # Token expiry overrides (optional)
+          EMAIL_VERIFICATION_EXPIRES_IN_SECRET: ${{ secrets.PROD_EMAIL_VERIFICATION_EXPIRES_IN }}
+          PASSWORD_RESET_EXPIRES_IN_SECRET: ${{ secrets.PROD_PASSWORD_RESET_EXPIRES_IN }}
           ADMIN_EMAIL_SECRET: ${{ secrets.PROD_ADMIN_EMAIL }}
           ADMIN_PASSWORD_SECRET: ${{ secrets.PROD_ADMIN_PASSWORD }}
         run: |
@@ -80,6 +97,23 @@ jobs:
 
           # DATABASE_URL may be provided directly, else fallback to constructed one (internal host 'db' on 5432)
           DATABASE_URL="${DATABASE_URL_SECRET:-}"
+          COOKIE_SECRET="${COOKIE_SECRET_SECRET:-}"
+          APP_URL="${APP_URL_SECRET:-http://localhost:3000}"
+          # SMTP (optional)
+          SMTP_HOST="${SMTP_HOST_SECRET:-}"
+          SMTP_PORT="${SMTP_PORT_SECRET:-}"
+          SMTP_SECURE="${SMTP_SECURE_SECRET:-}"
+          SMTP_USER="${SMTP_USER_SECRET:-}"
+          SMTP_PASS="${SMTP_PASS_SECRET:-}"
+          SMTP_FROM="${SMTP_FROM_SECRET:-}"
+          # Rate limit overrides (optional)
+          EMAIL_VERIFICATION_COOLDOWN_SECONDS="${EMAIL_VERIFICATION_COOLDOWN_SECONDS_SECRET:-}"
+          EMAIL_VERIFICATION_DAILY_LIMIT="${EMAIL_VERIFICATION_DAILY_LIMIT_SECRET:-}"
+          PASSWORD_RESET_COOLDOWN_SECONDS="${PASSWORD_RESET_COOLDOWN_SECONDS_SECRET:-}"
+          PASSWORD_RESET_DAILY_LIMIT="${PASSWORD_RESET_DAILY_LIMIT_SECRET:-}"
+          # Token expirations (optional, fallback to sane defaults)
+          EMAIL_VERIFICATION_EXPIRES_IN="${EMAIL_VERIFICATION_EXPIRES_IN_SECRET:-1d}"
+          PASSWORD_RESET_EXPIRES_IN="${PASSWORD_RESET_EXPIRES_IN_SECRET:-1h}"
 
           # Validate required secrets
           if [ -z "$JWT_SECRET" ]; then
@@ -94,6 +128,14 @@ jobs:
             fi
             # Note: if your password contains special characters (@, /, :), prefer providing PROD_DATABASE_URL directly.
             DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+          fi
+
+          # Validate APP_URL: must be provided and must not be the localhost default
+          # This prevents accidental production deploys with unusable localhost links.
+          if [ -z "$APP_URL" ] || [ "$APP_URL" = "http://localhost:3000" ]; then
+            echo "APP_URL is required for production and must not be the localhost default (http://localhost:3000)." >&2
+            echo "Please set secrets.PROD_APP_URL to your production URL (e.g. https://example.com)." >&2
+            exit 1
           fi
 
           {
@@ -112,6 +154,23 @@ jobs:
             echo "REFRESH_TOKEN_EXPIRES_IN=$REFRESH_TOKEN_EXPIRES_IN"
             echo "COOKIE_SECURE=$COOKIE_SECURE"
             echo "COOKIE_SAMESITE=$COOKIE_SAMESITE"
+            # Write non-sensitive values conditionally
+            if [ -n "$COOKIE_SECRET" ]; then echo "COOKIE_SECRET=$COOKIE_SECRET"; fi
+            echo "APP_URL=$APP_URL"
+            if [ -n "$SMTP_HOST" ]; then echo "SMTP_HOST=$SMTP_HOST"; fi
+            if [ -n "$SMTP_PORT" ]; then echo "SMTP_PORT=$SMTP_PORT"; fi
+            if [ -n "$SMTP_SECURE" ]; then echo "SMTP_SECURE=$SMTP_SECURE"; fi
+            if [ -n "$SMTP_USER" ]; then echo "SMTP_USER=$SMTP_USER"; fi
+            if [ -n "$SMTP_PASS" ]; then echo "SMTP_PASS=$SMTP_PASS"; fi
+            if [ -n "$SMTP_FROM" ]; then echo "SMTP_FROM=$SMTP_FROM"; fi
+            # Rate-limits
+            if [ -n "$EMAIL_VERIFICATION_COOLDOWN_SECONDS" ]; then echo "EMAIL_VERIFICATION_COOLDOWN_SECONDS=$EMAIL_VERIFICATION_COOLDOWN_SECONDS"; fi
+            if [ -n "$EMAIL_VERIFICATION_DAILY_LIMIT" ]; then echo "EMAIL_VERIFICATION_DAILY_LIMIT=$EMAIL_VERIFICATION_DAILY_LIMIT"; fi
+            if [ -n "$PASSWORD_RESET_COOLDOWN_SECONDS" ]; then echo "PASSWORD_RESET_COOLDOWN_SECONDS=$PASSWORD_RESET_COOLDOWN_SECONDS"; fi
+            if [ -n "$PASSWORD_RESET_DAILY_LIMIT" ]; then echo "PASSWORD_RESET_DAILY_LIMIT=$PASSWORD_RESET_DAILY_LIMIT"; fi
+            # Token expirations
+            if [ -n "$EMAIL_VERIFICATION_EXPIRES_IN" ]; then echo "EMAIL_VERIFICATION_EXPIRES_IN=$EMAIL_VERIFICATION_EXPIRES_IN"; fi
+            if [ -n "$PASSWORD_RESET_EXPIRES_IN" ]; then echo "PASSWORD_RESET_EXPIRES_IN=$PASSWORD_RESET_EXPIRES_IN"; fi
             if [ -n "$CORS_ORIGIN" ]; then echo "CORS_ORIGIN=$CORS_ORIGIN"; fi
             if [ -n "$ADMIN_EMAIL" ]; then echo "ADMIN_EMAIL=$ADMIN_EMAIL"; fi
             if [ -n "$ADMIN_PASSWORD" ]; then echo "ADMIN_PASSWORD=$ADMIN_PASSWORD"; fi

@@ -27,12 +27,16 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 All routes are prefixed with `/v1`.
 
 ### Authentication (`/auth`)
-- `POST /v1/auth/register` - Register a new user; sets HttpOnly cookies and returns `{ access_token, refresh_token, user }`
+- `POST /v1/auth/register` - Register a new user; sends verification email; returns message only
 - `POST /v1/auth/register/admin` - Register a new admin (requires existing admin; guarded by JWT + role)
 - `POST /v1/auth/login` - Login; sets HttpOnly cookies and returns `{ access_token, refresh_token, user }`
 - `POST /v1/auth/logout` - Revoke refresh tokens and clear cookies; returns `{ success: true }`
 - `GET /v1/auth/validate` - Validate current access cookie; returns `{ valid: true, user }` or 401 and clears cookies
 - `POST /v1/auth/refresh` - Rotate tokens using refresh cookie; sets new cookies and returns `{ access_token, refresh_token, user }`
+- `POST /v1/auth/verify-email` - Verify a user's email with `{ token }`
+- `POST /v1/auth/resend-verification` - Resend verification email with `{ email }`
+- `POST /v1/auth/forgot-password` - Start password reset with `{ email }`
+- `POST /v1/auth/reset-password` - Complete password reset with `{ token, newPassword }`
 
 ### Vocabulary (`/words`)
 - `GET /v1/words` - Get paginated list of words
