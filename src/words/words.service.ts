@@ -7,7 +7,7 @@ import { DbService } from '@/db/drizzle.service';
 import { CreateWordDto } from './dto/create-word.dto';
 import { UpdateWordDto } from './dto/update-word.dto';
 import { v7 as uuidv7 } from 'uuid';
-import { createHash } from 'crypto';
+import { computeContentHash } from '@/words/content-hash.util';
 import { words } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
@@ -18,31 +18,11 @@ export class WordsService {
 		return this.dbService.db;
 	}
 
-	/**
-	 * Generate a hash for duplicate detection
-	 */
-	private generateContentHash(
-		hiragana: string,
-		kanji: string | null,
-		english: string
-	): string {
-		// Trim and normalize inputs so equivalent values with extra spaces,
-		// unicode variants or case differences produce the same hash.
-		const normalizeAndFold = (s: string) =>
-			s.trim().normalize('NFKC').toLowerCase();
-
-		const h = normalizeAndFold(hiragana);
-		const k = kanji ? normalizeAndFold(kanji) : '';
-		const e = normalizeAndFold(english);
-
-		// keep same separator and lowercase the joined string prior to hashing
-		const content = `${h}|${k}|${e}`.toLowerCase();
-		return createHash('sha256').update(content).digest('hex');
-	}
+	// use shared computeContentHash util for normalization + hashing
 
 	async create(createWordDto: CreateWordDto) {
 		// Generate content hash for duplicate detection (hiragana|kanji|english)
-		const contentHash = this.generateContentHash(
+		const contentHash = computeContentHash(
 			createWordDto.hiragana,
 			createWordDto.kanji || null,
 			createWordDto.english

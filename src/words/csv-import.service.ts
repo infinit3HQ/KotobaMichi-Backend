@@ -3,7 +3,7 @@ import { words } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { DbService } from '@/db/drizzle.service';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
+import { computeContentHash } from '@/words/content-hash.util';
 import { v7 as uuidv7 } from 'uuid';
 import { parse } from 'csv-parse/sync';
 import * as path from 'path';
@@ -48,13 +48,19 @@ export class CsvImportService {
 	 * Generate a hash for duplicate detection
 	 * Uses hiragana + kanji + meaning to create a unique identifier
 	 */
+	/**
+	 * Wrapper that trims inputs from CSV and forwards to shared computeContentHash.
+	 * Converts empty kanji to null to match WordsService usage.
+	 */
 	private generateContentHash(
 		hiragana: string,
 		kanji: string,
 		meaning: string
 	): string {
-		const content = `${hiragana}|${kanji || ''}|${meaning}`.toLowerCase();
-		return crypto.createHash('sha256').update(content).digest('hex');
+		const h = hiragana?.trim() ?? '';
+		const k = kanji?.trim();
+		const m = meaning?.trim() ?? '';
+		return computeContentHash(h, k && k.length > 0 ? k : null, m);
 	}
 
 	/**
