@@ -151,6 +151,7 @@ Common commands:
 ```bash
 pnpm db:drizzle:generate   # generate SQL migrations from schema
 pnpm db:drizzle:migrate    # apply pending migrations
+pnpm db:drizzle:up         # generate + migrate (shortcut)
 ```
 
 See `docs/DRIZZLE_GUIDE.md` for full details and conventions.
