@@ -16,8 +16,13 @@ import { ConfigService } from '@nestjs/config';
 import { v7 as uuidv7 } from 'uuid';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { EmailService } from '../email/email.service';
-import { users, refreshTokens, emailVerificationTokens, passwordResetTokens } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import {
+	users,
+	refreshTokens,
+	emailVerificationTokens,
+	passwordResetTokens,
+} from '@/db/schema';
+import { eq, and, sql, desc, gte, isNull } from 'drizzle-orm';
 
 @Injectable()
 export class AuthService {
@@ -29,44 +34,77 @@ export class AuthService {
 	) {}
 
 	private readonly logger = new Logger(AuthService.name);
-	private get db() { return this.dbService.db; }
+	private get db() {
+		return this.dbService.db;
+	}
 
 	// ===== Utility helpers =====
-	private makeId() { return uuidv7(); }
+	private makeId() {
+		return uuidv7();
+	}
 
 	private async getUserByEmail(email: string) {
-		const rows = await this.db.select().from(users).where(eq(users.email,email)).limit(1);
+		const rows = await this.db
+			.select()
+			.from(users)
+			.where(eq(users.email, email))
+			.limit(1);
 		return rows[0] || null;
 	}
 
 	private async getUserById(id: string) {
-		const rows = await this.db.select().from(users).where(eq(users.id,id)).limit(1);
+		const rows = await this.db
+			.select()
+			.from(users)
+			.where(eq(users.id, id))
+			.limit(1);
 		return rows[0] || null;
 	}
 
 	private async getLatestEmailVerificationToken(userId: string) {
-		// Order by created_at desc limit 1 (manual because we removed query API shortcut)
-		const rows = await this.db.execute(sql`select * from email_verification_tokens where user_id = ${userId} order by created_at desc limit 1`);
-		return (rows as any)[0] || null;
+		const rows = await this.db
+			.select()
+			.from(emailVerificationTokens)
+			.where(eq(emailVerificationTokens.userId, userId))
+			.orderBy(desc(emailVerificationTokens.createdAt))
+			.limit(1);
+		return rows[0] || null;
 	}
 
 	private async getLatestPasswordResetToken(userId: string) {
-		const rows = await this.db.execute(sql`select * from password_reset_tokens where user_id = ${userId} order by created_at desc limit 1`);
-		return (rows as any)[0] || null;
+		const rows = await this.db
+			.select()
+			.from(passwordResetTokens)
+			.where(eq(passwordResetTokens.userId, userId))
+			.orderBy(desc(passwordResetTokens.createdAt))
+			.limit(1);
+		return rows[0] || null;
 	}
 
 	private async getEmailVerificationTokenByHash(hash: string) {
-		const rows = await this.db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.tokenHash, hash)).limit(1);
+		const rows = await this.db
+			.select()
+			.from(emailVerificationTokens)
+			.where(eq(emailVerificationTokens.tokenHash, hash))
+			.limit(1);
 		return rows[0] || null;
 	}
 
 	private async getPasswordResetTokenByHash(hash: string) {
-		const rows = await this.db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, hash)).limit(1);
+		const rows = await this.db
+			.select()
+			.from(passwordResetTokens)
+			.where(eq(passwordResetTokens.tokenHash, hash))
+			.limit(1);
 		return rows[0] || null;
 	}
 
 	private async getRefreshTokenByJti(jti: string) {
-		const rows = await this.db.select().from(refreshTokens).where(eq(refreshTokens.jti, jti)).limit(1);
+		const rows = await this.db
+			.select()
+			.from(refreshTokens)
+			.where(eq(refreshTokens.jti, jti))
+			.limit(1);
 		return rows[0] || null;
 	}
 
@@ -111,8 +149,16 @@ export class AuthService {
 			}
 		}
 		const since = new Date(now - 24 * 60 * 60 * 1000);
-		const [dailyRow] = await this.db.select({ value: sql<number>`count(*)`}).from(emailVerificationTokens).where(and(eq(emailVerificationTokens.userId,userId), sql`created_at >= ${since}`));
-		const dailyCount = Number(dailyRow?.value||0);
+		const [dailyRow] = await this.db
+			.select({ value: sql<number>`count(*)` })
+			.from(emailVerificationTokens)
+			.where(
+				and(
+					eq(emailVerificationTokens.userId, userId),
+					gte(emailVerificationTokens.createdAt, since)
+				)
+			);
+		const dailyCount = Number(dailyRow?.value || 0);
 		if (dailyCount >= this.verificationDailyLimit()) {
 			throw new HttpException(
 				'Daily limit for verification emails reached. Try again later.',
@@ -136,8 +182,16 @@ export class AuthService {
 			}
 		}
 		const since = new Date(now - 24 * 60 * 60 * 1000);
-		const [dailyRow] = await this.db.select({ value: sql<number>`count(*)`}).from(passwordResetTokens).where(and(eq(passwordResetTokens.userId,userId), sql`created_at >= ${since}`));
-		const dailyCount = Number(dailyRow?.value||0);
+		const [dailyRow] = await this.db
+			.select({ value: sql<number>`count(*)` })
+			.from(passwordResetTokens)
+			.where(
+				and(
+					eq(passwordResetTokens.userId, userId),
+					gte(passwordResetTokens.createdAt, since)
+				)
+			);
+		const dailyCount = Number(dailyRow?.value || 0);
 		if (dailyCount >= this.resetDailyLimit()) {
 			throw new HttpException(
 				'Daily limit for password reset emails reached. Try again later.',
@@ -255,13 +309,16 @@ export class AuthService {
 		const hashedPassword = await bcrypt.hash(password, 10);
 
 		// Create user
-		const [user] = await this.db.insert(users).values({
-			id: this.makeId(),
-			email,
-			password: hashedPassword,
-			role: 'USER'
-		}).returning();
-		if(!user) throw new Error('Failed to create user');
+		const [user] = await this.db
+			.insert(users)
+			.values({
+				id: this.makeId(),
+				email,
+				password: hashedPassword,
+				role: 'USER',
+			})
+			.returning();
+		if (!user) throw new Error('Failed to create user');
 
 		// create verification token and send email
 		await this.issueAndSendEmailVerification(user.id, user.email);
@@ -291,13 +348,16 @@ export class AuthService {
 		const hashedPassword = await bcrypt.hash(password, 10);
 
 		// Create admin user
-		const [user] = await this.db.insert(users).values({
-			id: this.makeId(),
-			email,
-			password: hashedPassword,
-			role: 'ADMIN'
-		}).returning();
-		if(!user) throw new Error('Failed to create admin user');
+		const [user] = await this.db
+			.insert(users)
+			.values({
+				id: this.makeId(),
+				email,
+				password: hashedPassword,
+				role: 'ADMIN',
+			})
+			.returning();
+		if (!user) throw new Error('Failed to create admin user');
 
 		// Generate tokens
 		const access = this.signAccessToken(user);
@@ -309,7 +369,10 @@ export class AuthService {
 			jti,
 			userId: user.id,
 			tokenHash: this.hashToken(refresh),
-			expiresAt: this.addMs(new Date(), this.parseTTLToMs(this.refreshTokenTTL()))
+			expiresAt: this.addMs(
+				new Date(),
+				this.parseTTLToMs(this.refreshTokenTTL())
+			),
 		});
 
 		this.logger.log(`Admin user registered: ${user.email}`);
@@ -357,7 +420,10 @@ export class AuthService {
 			jti,
 			userId: user.id,
 			tokenHash: this.hashToken(refresh),
-			expiresAt: this.addMs(new Date(), this.parseTTLToMs(this.refreshTokenTTL()))
+			expiresAt: this.addMs(
+				new Date(),
+				this.parseTTLToMs(this.refreshTokenTTL())
+			),
 		});
 
 		this.logger.log(`User logged in: ${email}`);
@@ -398,14 +464,24 @@ export class AuthService {
 	private async issueAndSendEmailVerification(userId: string, email: string) {
 		try {
 			// Invalidate previous tokens
-			await this.db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(and(eq(emailVerificationTokens.userId,userId), sql`used_at is null`));
+			await this.db
+				.update(emailVerificationTokens)
+				.set({ usedAt: new Date() })
+				.where(
+					and(
+						eq(emailVerificationTokens.userId, userId),
+						isNull(emailVerificationTokens.usedAt)
+					)
+				);
 			const raw = uuidv7() + '.' + uuidv7(); // long random string
 			const tokenHash = this.hashToken(raw);
 			const expiresAt = this.addMs(
 				new Date(),
 				this.parseTTLToMs(this.verificationTokenTTL())
 			);
-			await this.db.insert(emailVerificationTokens).values({ id: this.makeId(), userId, tokenHash, expiresAt });
+			await this.db
+				.insert(emailVerificationTokens)
+				.values({ id: this.makeId(), userId, tokenHash, expiresAt });
 			const link = this.buildVerificationLink(raw);
 			const displayName = email.split('@')[0];
 			await this.emailService.sendVerificationEmail(email, link, displayName);
@@ -426,9 +502,15 @@ export class AuthService {
 			this.logger.warn('Email verification failed: invalid or expired token');
 			throw new UnauthorizedException('Invalid or expired token');
 		}
-		await this.db.transaction(async (tx) => {
-			await tx.update(users).set({ isEmailVerified: true }).where(eq(users.id, rec.userId));
-			await tx.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.tokenHash, tokenHash));
+		await this.db.transaction(async tx => {
+			await tx
+				.update(users)
+				.set({ isEmailVerified: true })
+				.where(eq(users.id, rec.userId));
+			await tx
+				.update(emailVerificationTokens)
+				.set({ usedAt: new Date() })
+				.where(eq(emailVerificationTokens.tokenHash, tokenHash));
 		});
 		this.logger.log(`Email verified for userId=${rec.userId}`);
 		return { success: true } as const;
@@ -466,14 +548,24 @@ export class AuthService {
 		// Per-user rate limiting (cooldown + daily cap)
 		await this.enforcePasswordResetRateLimit(user.id);
 		// Invalidate previous tokens
-		await this.db.update(passwordResetTokens).set({ usedAt: new Date() }).where(and(eq(passwordResetTokens.userId,user.id), sql`used_at is null`));
+		await this.db
+			.update(passwordResetTokens)
+			.set({ usedAt: new Date() })
+			.where(
+				and(
+					eq(passwordResetTokens.userId, user.id),
+					isNull(passwordResetTokens.usedAt)
+				)
+			);
 		const raw = uuidv7() + '.' + uuidv7();
 		const tokenHash = this.hashToken(raw);
 		const expiresAt = this.addMs(
 			new Date(),
 			this.parseTTLToMs(this.passwordResetTTL())
 		);
-		await this.db.insert(passwordResetTokens).values({ id: this.makeId(), userId: user.id, tokenHash, expiresAt });
+		await this.db
+			.insert(passwordResetTokens)
+			.values({ id: this.makeId(), userId: user.id, tokenHash, expiresAt });
 		const link = this.buildPasswordResetLink(raw);
 		const displayName = email.split('@')[0];
 		await this.emailService.sendPasswordResetEmail(email, link, displayName);
@@ -489,10 +581,24 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid or expired token');
 		}
 		const hashed = await bcrypt.hash(newPassword, 10);
-		await this.db.transaction(async (tx) => {
-			await tx.update(users).set({ password: hashed }).where(eq(users.id, rec.userId));
-			await tx.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.tokenHash, tokenHash));
-			await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, rec.userId), sql`revoked_at is null`));
+		await this.db.transaction(async tx => {
+			await tx
+				.update(users)
+				.set({ password: hashed })
+				.where(eq(users.id, rec.userId));
+			await tx
+				.update(passwordResetTokens)
+				.set({ usedAt: new Date() })
+				.where(eq(passwordResetTokens.tokenHash, tokenHash));
+			await tx
+				.update(refreshTokens)
+				.set({ revokedAt: new Date() })
+				.where(
+					and(
+						eq(refreshTokens.userId, rec.userId),
+						isNull(refreshTokens.revokedAt)
+					)
+				);
 		});
 		this.logger.log(`Password reset successful for userId=${rec.userId}`);
 		return { success: true } as const;
@@ -516,9 +622,17 @@ export class AuthService {
 			throw new UnauthorizedException('Current password incorrect');
 		}
 		const hashed = await bcrypt.hash(newPassword, 10);
-		await this.db.transaction(async (tx) => {
-			await tx.update(users).set({ password: hashed }).where(eq(users.id,userId));
-			await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId,userId), sql`revoked_at is null`));
+		await this.db.transaction(async tx => {
+			await tx
+				.update(users)
+				.set({ password: hashed })
+				.where(eq(users.id, userId));
+			await tx
+				.update(refreshTokens)
+				.set({ revokedAt: new Date() })
+				.where(
+					and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt))
+				);
 		});
 		this.logger.log(
 			`Password changed and sessions revoked for userId=${userId}`
@@ -592,14 +706,25 @@ export class AuthService {
 
 		// Rotate: create new refresh token, revoke old
 		const { token: newRefresh, jti: newJti } = this.signRefreshToken(user);
-		const [newRecord] = await this.db.insert(refreshTokens).values({
-			id: this.makeId(),
-			jti: newJti,
-			userId: user.id,
-			tokenHash: this.hashToken(newRefresh),
-			expiresAt: this.addMs(new Date(), this.parseTTLToMs(this.refreshTokenTTL()))
-		}).returning();
-		await this.db.update(refreshTokens).set({ revokedAt: new Date(), replacedById: newRecord?.id }).where(eq(refreshTokens.jti, payload.jti));
+		await this.db.transaction(async tx => {
+			const [nr] = await tx
+				.insert(refreshTokens)
+				.values({
+					id: this.makeId(),
+					jti: newJti,
+					userId: user.id,
+					tokenHash: this.hashToken(newRefresh),
+					expiresAt: this.addMs(
+						new Date(),
+						this.parseTTLToMs(this.refreshTokenTTL())
+					),
+				})
+				.returning();
+			await tx
+				.update(refreshTokens)
+				.set({ revokedAt: new Date(), replacedById: nr?.id })
+				.where(eq(refreshTokens.jti, payload.jti));
+		});
 
 		const access = this.signAccessToken(user);
 		const refresh = newRefresh;
@@ -662,7 +787,12 @@ export class AuthService {
 	}
 
 	private async revokeAllUserRefreshTokens(userId: string) {
-		await this.db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId,userId), sql`revoked_at is null`));
+		await this.db
+			.update(refreshTokens)
+			.set({ revokedAt: new Date() })
+			.where(
+				and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt))
+			);
 	}
 
 	async logoutFromCookies(req: Request, res: Response) {
