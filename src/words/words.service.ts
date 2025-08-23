@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+	Injectable,
+	NotFoundException,
+	ConflictException,
+} from '@nestjs/common';
 import { DbService } from '@/db/drizzle.service';
 import { CreateWordDto } from './dto/create-word.dto';
 import { UpdateWordDto } from './dto/update-word.dto';
@@ -51,28 +55,38 @@ export class WordsService {
 		});
 
 		if (existing) {
-			throw new Error('A word with similar content already exists');
+			throw new ConflictException('A word with similar content already exists');
 		}
 
-		// Insert
-		const [inserted] = await this.db
-			.insert(words)
-			.values({
-				id: uuidv7(),
-				hiragana: createWordDto.hiragana,
-				kanji: createWordDto.kanji || null,
-				pronunciationUrl: createWordDto.pronunciationUrl || null,
-				english: createWordDto.english,
-				contentHash,
-				romaji: createWordDto.romaji || null,
-				level: createWordDto.level || 'N5',
-				topic: createWordDto.topic || null,
-				partOfSpeech: createWordDto.partOfSpeech || null,
-				vectorText: createWordDto.vectorText || null,
-				vector: createWordDto.vector as any, // drizzle pgvector expects number[] | null
-			})
-			.returning();
-		return inserted;
+		// Insert (race-safe: catch DB unique-violation and map to Conflict)
+		try {
+			const [inserted] = await this.db
+				.insert(words)
+				.values({
+					id: uuidv7(),
+					hiragana: createWordDto.hiragana,
+					kanji: createWordDto.kanji || null,
+					pronunciationUrl: createWordDto.pronunciationUrl || null,
+					english: createWordDto.english,
+					contentHash,
+					romaji: createWordDto.romaji || null,
+					level: createWordDto.level || 'N5',
+					topic: createWordDto.topic || null,
+					partOfSpeech: createWordDto.partOfSpeech || null,
+					vectorText: createWordDto.vectorText || null,
+					vector: createWordDto.vector as any, // drizzle pgvector expects number[] | null
+				})
+				.returning();
+			return inserted;
+		} catch (err: any) {
+			// Postgres unique violation code
+			if (err?.code === '23505') {
+				throw new ConflictException(
+					'A word with similar content already exists'
+				);
+			}
+			throw err;
+		}
 	}
 
 	async findAll(page: number = 1, limit: number = 10) {
