@@ -1,15 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { words } from '@/db/schema';
+import { eq, sql } from 'drizzle-orm';
+import { DbService } from '@/db/drizzle.service';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { v7 as uuidv7 } from 'uuid';
 import { parse } from 'csv-parse/sync';
 import * as path from 'path';
 
+// Matches the enriched dataset columns defined in docs/Dataset.md
 interface CsvWord {
-  Kanji: string;
-  Hiragana: string;
-  English: string;
-  PronunciationURL: string;
+  Kanji: string;               // may be empty
+  Hiragana: string;            // required
+  Romaji?: string;             // optional (schema romaji)
+  English: string;             // required -> schema english
+  Level?: string;              // defaults to N5 if missing
+  PronunciationURL: string;    // required (audio URL) -> schema pronunciationUrl
+  Topic?: string;              // optional thematic topic -> schema topic
+  Part_of_Speech?: string;     // grammatical category -> schema partOfSpeech
+  Vector?: string;             // JSON-like string: "[0.123, ...]" -> schema vector
+  vector_text?: string;        // source text used for embedding -> schema vectorText
 }
 
 interface ImportResult {
@@ -26,7 +36,8 @@ export class CsvImportService {
   // Define the root directory for CSV imports
   private static readonly CSV_IMPORT_ROOT = path.resolve(process.cwd(), 'csv-imports');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly dbService: DbService) {}
+  private get db() { return this.dbService.db; }
 
   /**
    * Generate a hash for duplicate detection
@@ -44,7 +55,7 @@ export class CsvImportService {
     try {
       const fileContent = fs.readFileSync(filePath, 'utf-8');
       const records = parse(fileContent, {
-        columns: true,
+        columns: (header: string[]) => header.map(h => this.normalizeHeader(h)),
         skip_empty_lines: true,
         trim: true,
       }) as CsvWord[];
@@ -62,7 +73,7 @@ export class CsvImportService {
   private parseCsvContent(content: string | Buffer): CsvWord[] {
     try {
       const records = parse(content, {
-        columns: true,
+        columns: (header: string[]) => header.map(h => this.normalizeHeader(h)),
         skip_empty_lines: true,
         trim: true,
       }) as CsvWord[];
@@ -75,14 +86,41 @@ export class CsvImportService {
   }
 
   /**
+   * Normalize a CSV header name to the canonical field expected by CsvWord.
+   * Handles BOM, case differences, underscores/spaces variants.
+   */
+  private normalizeHeader(raw: string): string {
+    const cleaned = raw.replace(/^\uFEFF/, '').trim();
+    const key = cleaned.toLowerCase().replace(/\s+/g, '_');
+    // Map of normalized -> canonical header names
+    const map: Record<string, string> = {
+      kanji: 'Kanji',
+      hiragana: 'Hiragana',
+      romaji: 'Romaji',
+      english: 'English',
+      level: 'Level',
+      pronunciationurl: 'PronunciationURL',
+      pronunciation_url: 'PronunciationURL',
+      topic: 'Topic',
+      part_of_speech: 'Part_of_Speech',
+      partofspeech: 'Part_of_Speech',
+      vector: 'Vector',
+      vector_text: 'vector_text',
+      vectortext: 'vector_text',
+    };
+    const canonical = map[key] || cleaned; // fallback to original if unknown
+    if (cleaned !== canonical) {
+      this.logger.debug(`Header normalized: '${cleaned}' -> '${canonical}'`);
+    }
+    return canonical;
+  }
+
+  /**
    * Check if a word already exists by content hash
    */
   private async wordExists(contentHash: string): Promise<boolean> {
-    const existingWord = await this.prisma.word.findUnique({
-      where: { contentHash },
-      select: { id: true },
-    });
-    return !!existingWord;
+  const existing = await this.db.query.words.findFirst({ where: eq(words.contentHash, contentHash), columns: { id: true } });
+  return !!existing;
   }
 
   /**
@@ -90,20 +128,51 @@ export class CsvImportService {
    */
   private validateWordData(word: CsvWord, index: number): string[] {
     const errors: string[] = [];
-    
-    if (!word.Hiragana?.trim()) {
-      errors.push(`Row ${index + 2}: Hiragana is required`);
-    }
-    
-    if (!word.English?.trim()) {
-      errors.push(`Row ${index + 2}: English meaning is required`);
-    }
-    
-    if (!word.PronunciationURL?.trim()) {
-      errors.push(`Row ${index + 2}: Pronunciation URL is required`);
-    }
+    const row = index + 2; // account for header row
 
+    if (!word.Hiragana?.trim()) {
+      errors.push(`Row ${row}: Hiragana is required`);
+    }
+    if (!word.English?.trim()) {
+      errors.push(`Row ${row}: English meaning is required`);
+    }
+    if (!word.PronunciationURL?.trim()) {
+      errors.push(`Row ${row}: Pronunciation URL is required`);
+    }
+    // Romaji expected in enriched dataset but allow import if missing (will log)
+    if (!word.Romaji?.trim()) {
+      this.logger.warn(`Row ${row}: Romaji missing; continuing with fallback`);
+    }
+    // Optional: basic vector sanity (length & numeric) if provided
+    if (word.Vector) {
+      const parsed = this.safeParseVector(word.Vector);
+      if (parsed && parsed.length !== 768) {
+        errors.push(`Row ${row}: Vector length ${parsed.length} != 768`);
+      }
+    }
     return errors;
+  }
+
+  /**
+   * Parse vector string -> number[] (expects JSON-like array string)
+   * Returns undefined on failure (caller decides how to handle)
+   */
+  private safeParseVector(vectorStr?: string): number[] | undefined {
+    if (!vectorStr) return undefined;
+    const trimmed = vectorStr.trim();
+    if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return undefined;
+    try {
+      // Use JSON.parse; dataset format is valid JSON array
+      const arr = JSON.parse(trimmed);
+      if (!Array.isArray(arr)) return undefined;
+      // Convert each element to number (filter out NaN)
+      const nums = arr.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n));
+      if (nums.length === 0) return undefined;
+      return nums;
+    } catch (e) {
+      this.logger.warn(`Vector parse failed: ${(e instanceof Error) ? e.message : String(e)}`);
+      return undefined;
+    }
   }
 
   /**
@@ -131,10 +200,15 @@ export class CsvImportService {
 
       const wordsToInsert: Array<{
         hiragana: string;
-        katakana: string | null;
-        kanji: string | null;
-        pronunciation: string;
-        meaning: string;
+        kanji?: string;
+        romaji?: string;
+        pronunciationUrl: string; // audio URL
+        english: string;
+        level: string;
+        topic?: string;
+        partOfSpeech?: string;
+        vector?: number[];
+        vectorText?: string;
         contentHash: string;
       }> = [];
 
@@ -165,14 +239,27 @@ export class CsvImportService {
         }
 
         // Prepare word for insertion
-        const wordData = {
+        // Parse vector if provided
+        const parsedVector = this.safeParseVector(csvWord.Vector);
+
+        const wordData: typeof wordsToInsert[number] = {
           hiragana: csvWord.Hiragana.trim(),
-          katakana: null, // CSV doesn't have katakana, set to null
-          kanji: csvWord.Kanji?.trim() || null,
-          pronunciation: csvWord.PronunciationURL.trim(),
-          meaning: csvWord.English.trim(),
+          pronunciationUrl: csvWord.PronunciationURL.trim(),
+          english: csvWord.English.trim(),
+          level: csvWord.Level?.trim() || 'N5',
           contentHash,
         };
+        const kanji = csvWord.Kanji?.trim();
+        if (kanji) wordData.kanji = kanji;
+        const romaji = csvWord.Romaji?.trim();
+        if (romaji) wordData.romaji = romaji;
+        const topic = csvWord.Topic?.trim();
+        if (topic) wordData.topic = topic;
+        const pos = csvWord.Part_of_Speech?.trim();
+        if (pos) wordData.partOfSpeech = pos;
+        if (parsedVector && parsedVector.length === 768) wordData.vector = parsedVector;
+        const vectorText = csvWord.vector_text?.trim();
+        if (vectorText) wordData.vectorText = vectorText;
 
         wordsToInsert.push(wordData);
       }
@@ -180,10 +267,23 @@ export class CsvImportService {
       // Bulk insert words in this batch
       if (wordsToInsert.length > 0) {
         try {
-          await this.prisma.word.createMany({
-            data: wordsToInsert,
-            skipDuplicates: true, // Additional safety net
-          });
+          // Drizzle lacks native createMany skipDuplicates; fallback to sequential inserts with ON CONFLICT DO NOTHING raw
+          for (const w of wordsToInsert) {
+            await this.db.insert(words).values({
+              id: uuidv7(),
+              hiragana: w.hiragana,
+              kanji: w.kanji,
+              romaji: w.romaji,
+              english: w.english,
+              level: w.level,
+              pronunciationUrl: w.pronunciationUrl,
+              topic: w.topic,
+              partOfSpeech: w.partOfSpeech,
+              vector: w.vector,
+              vectorText: w.vectorText,
+              contentHash: w.contentHash,
+            }).onConflictDoNothing();
+          }
           result.imported += wordsToInsert.length;
           this.logger.log(`Inserted ${wordsToInsert.length} words from batch ${batchIndex + 1}`);
         } catch (error) {
@@ -242,22 +342,13 @@ export class CsvImportService {
    * Get import statistics
    */
   async getImportStats() {
-    const totalWords = await this.prisma.word.count();
-    const recentImports = await this.prisma.word.count({
-      where: {
-        createdAt: {
-          gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
-        },
-      },
-    });
+  const [totalRow] = await this.db.select({ value: sql<number>`count(*)` }).from(words);
+  const [recentRow] = await this.db.select({ value: sql<number>`count(*)` }).from(words).where(sql`created_at >= now() - interval '24 hours'`);
 
     return {
-      totalWords,
-      recentImports,
-      lastImportTime: await this.prisma.word.findFirst({
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
-      }),
+  totalWords: Number(totalRow?.value || 0),
+  recentImports: Number(recentRow?.value || 0),
+      lastImportTime: await this.db.query.words.findFirst({ orderBy: (w,{ desc }) => [desc(w.createdAt)], columns: { createdAt: true } }),
     };
   }
 
@@ -265,8 +356,8 @@ export class CsvImportService {
    * Clear all words (use with caution!)
    */
   async clearAllWords(): Promise<number> {
-    const result = await this.prisma.word.deleteMany();
-    this.logger.warn(`Deleted ${result.count} words from database`);
-    return result.count;
+  const deleted = await this.db.delete(words).returning({ id: words.id });
+  this.logger.warn(`Deleted ${deleted.length} words from database`);
+  return deleted.length;
   }
 }

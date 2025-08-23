@@ -20,7 +20,8 @@ import { BulkImportResultDto, ImportStatsDto } from './dto/bulk-import.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+// Replaced Prisma UserRole enum with local literal to remove Prisma dependency
+const ADMIN_ROLE = 'ADMIN';
 
 @Controller('words')
 export class WordsController {
@@ -31,7 +32,7 @@ export class WordsController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   create(@Body() createWordDto: CreateWordDto) {
     return this.wordsService.create(createWordDto);
   }
@@ -54,14 +55,14 @@ export class WordsController {
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   update(@Param('id') id: string, @Body() updateWordDto: UpdateWordDto) {
     return this.wordsService.update(id, updateWordDto);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   remove(@Param('id') id: string) {
     return this.wordsService.remove(id);
   }
@@ -69,7 +70,7 @@ export class WordsController {
   // CSV Import endpoints
   @Post('import/csv')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   async importFromCsv(@Body('filePath') filePath: string): Promise<BulkImportResultDto> {
     return this.csvImportService.importFromCsv(filePath);
   }
@@ -77,7 +78,7 @@ export class WordsController {
   // New: CSV upload endpoint (multipart/form-data)
   @Post('import/upload')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   @UseInterceptors(FileInterceptor('file'))
   async importFromUpload(@UploadedFile() file: any): Promise<BulkImportResultDto> {
     if (!file) {
@@ -89,7 +90,7 @@ export class WordsController {
 
   @Get('import/stats')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   async getImportStats(): Promise<ImportStatsDto> {
     const stats = await this.csvImportService.getImportStats();
     return {
@@ -100,7 +101,7 @@ export class WordsController {
 
   @Delete('import/clear-all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(ADMIN_ROLE)
   async clearAllWords(): Promise<{ deletedCount: number }> {
     const deletedCount = await this.csvImportService.clearAllWords();
     return { deletedCount };

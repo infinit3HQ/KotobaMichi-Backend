@@ -1,94 +1,72 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { v7 as uuidv7 } from 'uuid';
+import { DbService } from '@/db/drizzle.service';
 import { CreateQuizDto, SubmitQuizDto } from './dto';
+import { quizzes, quizWords, words, quizAttempts } from '@/db/schema';
+import { eq, sql } from 'drizzle-orm';
 
 @Injectable()
 export class QuizzesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private dbService: DbService) {}
+  private get db() { return this.dbService.db; }
 
   async create(createQuizDto: CreateQuizDto, userId: string) {
     const { wordIds, ...quizData } = createQuizDto;
 
     // Verify all words exist
-    const words = await this.prisma.word.findMany({
-      where: { id: { in: wordIds } },
-    });
-
-    if (words.length !== wordIds.length) {
+  const wordRows = await this.db.query.words.findMany({ where: (w,{ inArray }) => inArray(w.id, wordIds) });
+    if (wordRows.length !== wordIds.length) {
       throw new BadRequestException('One or more words not found');
     }
-
-    return this.prisma.quiz.create({
-      data: {
-        ...quizData,
-        createdById: userId,
-        quizWords: {
-          create: wordIds.map((wordId) => ({ wordId })),
-        },
-      },
-      include: {
-        creator: {
-          select: { id: true, email: true, role: true },
-        },
-        quizWords: {
-          include: {
-            word: true,
-          },
-        },
-        _count: {
-          select: { attempts: true },
-        },
-      },
+  const quizId = uuidv7();
+    await this.db.insert(quizzes).values({
+      id: quizId,
+      title: quizData.title,
+      description: quizData.description || null,
+      isPublic: !!quizData.isPublic,
+      createdById: userId
     });
+    if (wordIds.length) {
+      await this.db.insert(quizWords).values(wordIds.map(wid => ({
+  id: uuidv7(),
+        quizId,
+        wordId: wid
+      })));
+    }
+    return this.findOne(quizId, userId);
   }
 
   async findAllPublic() {
-    return this.prisma.quiz.findMany({
-      where: { isPublic: true },
-      include: {
-        creator: {
-          select: { id: true, email: true, role: true },
-        },
-        _count: {
-          select: { quizWords: true, attempts: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+    const rows = await this.db.query.quizzes.findMany({
+      where: eq(quizzes.isPublic, true),
+      orderBy: (q,{ desc }) => [desc(q.createdAt)]
     });
+    // counts
+    const result = [] as any[];
+    for (const q of rows) {
+      const [qwCount] = await this.db.select({ v: sql<number>`count(*)`}).from(quizWords).where(eq(quizWords.quizId,q.id));
+      const [attCount] = await this.db.select({ v: sql<number>`count(*)`}).from(quizAttempts).where(eq(quizAttempts.quizId,q.id));
+      result.push({ ...q, _count: { quizWords: Number(qwCount?.v||0), attempts: Number(attCount?.v||0) } });
+    }
+    return result;
   }
 
   async findMyQuizzes(userId: string) {
-    return this.prisma.quiz.findMany({
-      where: { createdById: userId },
-      include: {
-        creator: {
-          select: { id: true, email: true, role: true },
-        },
-        _count: {
-          select: { quizWords: true, attempts: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+    const rows = await this.db.query.quizzes.findMany({
+      where: eq(quizzes.createdById, userId),
+      orderBy: (q,{ desc }) => [desc(q.createdAt)]
     });
+    const result = [] as any[];
+    for (const q of rows) {
+      const [qwCount] = await this.db.select({ v: sql<number>`count(*)`}).from(quizWords).where(eq(quizWords.quizId,q.id));
+      const [attCount] = await this.db.select({ v: sql<number>`count(*)`}).from(quizAttempts).where(eq(quizAttempts.quizId,q.id));
+      result.push({ ...q, _count: { quizWords: Number(qwCount?.v||0), attempts: Number(attCount?.v||0) } });
+    }
+    return result;
   }
 
   async findOne(id: string, userId?: string) {
-    const quiz = await this.prisma.quiz.findUnique({
-      where: { id },
-      include: {
-        creator: {
-          select: { id: true, email: true, role: true },
-        },
-        quizWords: {
-          include: {
-            word: true,
-          },
-        },
-        _count: {
-          select: { attempts: true },
-        },
-      },
-    });
+    const quiz = await this.db.query.quizzes.findFirst({ where: eq(quizzes.id,id) });
 
     if (!quiz) {
       throw new NotFoundException('Quiz not found');
@@ -98,15 +76,18 @@ export class QuizzesService {
     if (!quiz.isPublic && quiz.createdById !== userId) {
       throw new ForbiddenException('Access denied to this quiz');
     }
-
-    return quiz;
+    const qWords = await this.db.query.quizWords.findMany({ where: eq(quizWords.quizId, quiz.id) });
+    const wordsMap = [] as any[];
+    for (const qw of qWords) {
+      const w = await this.db.query.words.findFirst({ where: eq(words.id,qw.wordId) });
+      if (w) wordsMap.push({ ...qw, word: w });
+    }
+    const [attCount] = await this.db.select({ v: sql<number>`count(*)`}).from(quizAttempts).where(eq(quizAttempts.quizId, quiz.id));
+    return { ...quiz, quizWords: wordsMap, _count: { attempts: Number(attCount?.v||0) } };
   }
 
   async remove(id: string, userId: string, userRole: string) {
-    const quiz = await this.prisma.quiz.findUnique({
-      where: { id },
-      select: { id: true, createdById: true },
-    });
+    const quiz = await this.db.query.quizzes.findFirst({ where: eq(quizzes.id,id), columns: { id: true, createdById: true } });
 
     if (!quiz) {
       throw new NotFoundException('Quiz not found');
@@ -117,24 +98,13 @@ export class QuizzesService {
       throw new ForbiddenException('Access denied');
     }
 
-    await this.prisma.quiz.delete({
-      where: { id },
-    });
+  await this.db.delete(quizzes).where(eq(quizzes.id,id));
 
     return { message: 'Quiz deleted successfully' };
   }
 
   async submitQuiz(id: string, submitQuizDto: SubmitQuizDto, userId: string) {
-    const quiz = await this.prisma.quiz.findUnique({
-      where: { id },
-      include: {
-        quizWords: {
-          include: {
-            word: true,
-          },
-        },
-      },
-    });
+  const quiz = await this.db.query.quizzes.findFirst({ where: eq(quizzes.id,id) });
 
     if (!quiz) {
       throw new NotFoundException('Quiz not found');
@@ -146,11 +116,16 @@ export class QuizzesService {
     }
 
     const { answers } = submitQuizDto;
-    const quizWords = quiz.quizWords;
+    const qWords = await this.db.query.quizWords.findMany({ where: eq(quizWords.quizId, quiz.id) });
+    const attached = [] as any[];
+    for (const qw of qWords) {
+      const w = await this.db.query.words.findFirst({ where: eq(words.id,qw.wordId) });
+      if (w) attached.push({ ...qw, word: w });
+    }
     
     // Validate that all quiz words have answers
     const submittedWordIds = answers.map(a => a.wordId);
-    const requiredWordIds = quizWords.map(qw => qw.wordId);
+  const requiredWordIds = attached.map(qw => qw.wordId);
     
     const missingAnswers = requiredWordIds.filter(id => !submittedWordIds.includes(id));
     if (missingAnswers.length > 0) {
@@ -160,18 +135,17 @@ export class QuizzesService {
     // Calculate score
     let correctAnswers = 0;
     const results = answers.map(answer => {
-      const quizWord = quizWords.find(qw => qw.wordId === answer.wordId);
+  const quizWord = attached.find(qw => qw.wordId === answer.wordId);
       if (!quizWord) {
         throw new BadRequestException(`Invalid word ID: ${answer.wordId}`);
       }
 
-      const word = quizWord.word;
+  const word = quizWord.word;
       // Check if answer matches any of the word forms (case insensitive)
       const isCorrect = 
         answer.answer.toLowerCase() === word.hiragana.toLowerCase() ||
-        (word.katakana && answer.answer.toLowerCase() === word.katakana.toLowerCase()) ||
         (word.kanji && answer.answer.toLowerCase() === word.kanji.toLowerCase()) ||
-        answer.answer.toLowerCase() === word.meaning.toLowerCase();
+        answer.answer.toLowerCase() === word.english.toLowerCase();
 
       if (isCorrect) {
         correctAnswers++;
@@ -182,36 +156,36 @@ export class QuizzesService {
         userAnswer: answer.answer,
         correctAnswers: [
           word.hiragana,
-          word.katakana,
           word.kanji,
-          word.meaning,
+          word.english,
         ].filter(Boolean),
         isCorrect,
         word: {
           hiragana: word.hiragana,
-          katakana: word.katakana,
           kanji: word.kanji,
-          pronunciation: word.pronunciation,
-          meaning: word.meaning,
+          pronunciationUrl: word.pronunciationUrl,
+          english: word.english,
         },
       };
     });
 
-    const score = Math.round((correctAnswers / quizWords.length) * 100);
+  const score = Math.round((correctAnswers / attached.length) * 100);
 
     // Save quiz attempt
-    const quizAttempt = await this.prisma.quizAttempt.create({
-      data: {
-        userId,
-        quizId: id,
-        score,
-      },
-    });
+    const [attempt] = await this.db.insert(quizAttempts).values({
+  id: uuidv7(),
+      userId,
+      quizId: id,
+      score,
+      completedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }).returning();
 
     return {
-      attemptId: quizAttempt.id,
-      score,
-      totalQuestions: quizWords.length,
+  attemptId: attempt?.id,
+  score,
+  totalQuestions: attached.length,
       correctAnswers,
       results,
     };
