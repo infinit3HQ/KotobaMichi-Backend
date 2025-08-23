@@ -20,10 +20,7 @@ RUN pnpm install
 # Copy source code
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate
-
-# Build the application
+# Build the application (no Prisma client generation needed; Drizzle uses SQL migrations only)
 RUN pnpm run build
 
 # Prune dev dependencies to keep only production deps
@@ -40,7 +37,8 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
+COPY drizzle ./drizzle
+COPY drizzle.config.ts ./drizzle.config.ts
 
 # Install runtime utilities
 RUN apk add --no-cache curl

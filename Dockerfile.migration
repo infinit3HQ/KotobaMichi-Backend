@@ -1,4 +1,4 @@
-# Migration stage - lightweight Alpine image for running Prisma migrations
+# Migration stage - lightweight Alpine image for running Drizzle migrations
 FROM node:18-alpine AS migration
 
 # Set working directory
@@ -14,14 +14,13 @@ RUN apk add --no-cache curl
 COPY package*.json ./
 COPY pnpm-lock.yaml ./
 
-# Install dependencies (including dev dependencies for Prisma CLI)
-RUN pnpm install
+# Install dependencies (need drizzle-kit only plus pg driver)
+RUN pnpm install --prod=false
 
-# Copy Prisma schema and migrations
-COPY prisma ./prisma
-
-# Generate Prisma client
-RUN npx prisma generate
+# Copy Drizzle config, migrations and schema for type references
+COPY drizzle.config.ts ./drizzle.config.ts
+COPY drizzle ./drizzle
+COPY src/db ./src/db
 
 # Create a non-root user
 RUN addgroup -g 1001 -S nodejs \
@@ -33,5 +32,5 @@ RUN chown -R nestjs:nodejs /app
 # Switch to non-root user
 USER nestjs
 
-# Default command to run migrations
-CMD ["npx", "prisma", "migrate", "deploy"]
+# Default command to run Drizzle migrations
+CMD ["pnpm", "db:drizzle:migrate"]

@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Migration runner script
-# This script can be used to run migrations in different environments
+#!/bin/bash
+
+# Drizzle migration runner script
+# Used to run the published *migration* image (which now executes `pnpm db:drizzle:migrate`)
+# against a target DATABASE_URL. The image already contains compiled code & SQL migrations
+# in the /app/drizzle folder produced at build time. It will NOT generate new migrations –
+# you must commit migrations before building/publishing images.
 
 set -e
 
@@ -62,13 +67,13 @@ fi
 # Construct full image name
 FULL_IMAGE_NAME="${REGISTRY}/${REPOSITORY}-migration:${IMAGE_TAG}"
 
-echo "Running migrations..."
+echo "Running Drizzle migrations..."
 echo "Image: $FULL_IMAGE_NAME"
-echo "Database URL: ${DATABASE_URL:0:20}..." # Only show first 20 chars for security
+echo "Database URL (truncated): ${DATABASE_URL:0:25}..." # Only show first chars for security
 
 # Run the migration container
 docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
   "$FULL_IMAGE_NAME"
 
-echo "Migrations completed successfully!"
+echo "Drizzle migrations completed successfully!"
