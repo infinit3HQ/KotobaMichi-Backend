@@ -4,7 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { PrismaModule } from './prisma/prisma.module';
+import { DrizzleModule } from './db/drizzle.module';
 import { AuthModule } from './auth/auth.module';
 import { WordsModule } from './words/words.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
@@ -23,7 +23,7 @@ import { EmailModule } from './email/email.module';
 				limit: 100, // default: 100 req/min per IP
 			},
 		]),
-		PrismaModule,
+		DrizzleModule,
 		AuthModule,
 		EmailModule,
 		WordsModule,

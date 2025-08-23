@@ -1,6 +1,6 @@
 # KotobaMichi(言葉道)-Backend
 
-KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Japanese vocabulary through interactive quizzes and spaced repetition. This repository contains the backend code for the KotobaMichi platform, built with NestJS, Prisma, and TypeScript.
+KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Japanese vocabulary through interactive quizzes and spaced repetition. This repository contains the backend code for the KotobaMichi platform, built with NestJS, Drizzle ORM, and TypeScript.
 
 ## Features
 
@@ -16,7 +16,7 @@ KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Jap
 ## Tech Stack
 
 - **Framework**: NestJS (Node.js)
-- **Database**: PostgreSQL with Prisma ORM
+- **Database**: PostgreSQL with Drizzle ORM
 - **Authentication**: JWT with Passport.js
 - **Validation**: class-validator
 - **Testing**: Jest + Supertest
@@ -83,16 +83,10 @@ cp .env.example .env
 # Edit .env with your database URL, JWT secret, etc.
 ```
 
-4. Set up the database:
+4. Set up the database (Drizzle):
 ```bash
-# Run migrations
-npx prisma migrate dev
-
-# Generate Prisma client
-npx prisma generate
-
-# (Optional) Seed database
-npx prisma db seed
+pnpm db:drizzle:migrate   # apply migrations
+# (Optional) add seed script if needed
 ```
 
 5. Import vocabulary data:
@@ -147,6 +141,20 @@ The application uses the following main entities:
 - **Quiz** - Quiz collections linking multiple words
 - **QuizWord** - Many-to-many relationship between quizzes and words
 - **QuizAttempt** - User quiz attempts with scores and completion times
+
+### Drizzle ORM
+
+The project now uses Drizzle ORM exclusively (Prisma removed). Schema defined in `src/db/schema.ts`.
+
+Common commands:
+
+```bash
+pnpm db:drizzle:generate   # generate SQL migrations from schema
+pnpm db:drizzle:migrate    # apply pending migrations
+pnpm db:drizzle:up         # generate + migrate (shortcut)
+```
+
+See `docs/DRIZZLE_GUIDE.md` for full details and conventions.
 
 ## CSV Import System
 
