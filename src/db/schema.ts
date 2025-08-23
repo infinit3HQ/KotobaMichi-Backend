@@ -68,7 +68,7 @@ export const quizzes = pgTable(
 		title: text('title').notNull(),
 		description: text('description'),
 		isPublic: boolean('is_public').notNull().default(false),
-		createdById: varchar('created_by_id', { length: 32 })
+		createdById: varchar('created_by_id', { length: 128 })
 			.notNull()
 			.references(() => users.id, { onDelete: 'cascade', onUpdate: 'no action' }),
 		createdAt: timestamp('created_at', { withTimezone: false })
@@ -191,7 +191,7 @@ export const passwordResetTokens = pgTable(
 // Placeholder for future vector column example:
 // import { vector, index } from 'drizzle-orm/pg-core';
 // export const embeddingsExample = pgTable('embeddings_example', {
-//   id: varchar('id', { length: 32 }).primaryKey(),
+//   id: varchar('id', { length: 128 }).primaryKey(),
 //   embedding: vector('embedding', { dimensions: 15128 })
 // }, (t) => [
 //   index('embedding_cosine_idx').using('hnsw', t.embedding.op('vector_cosine_ops'))
