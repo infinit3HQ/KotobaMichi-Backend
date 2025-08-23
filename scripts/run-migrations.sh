@@ -1,7 +1,4 @@
 #!/bin/bash
-
-#!/bin/bash
-
 # Drizzle migration runner script
 # Used to run the published *migration* image (which now executes `pnpm db:drizzle:migrate`)
 # against a target DATABASE_URL. The image already contains compiled code & SQL migrations
