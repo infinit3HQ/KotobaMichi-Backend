@@ -20,9 +20,19 @@ export class WordsService {
 	private generateContentHash(
 		hiragana: string,
 		kanji: string | null,
-		meaning: string
+		english: string
 	): string {
-		const content = `${hiragana}|${kanji || ''}|${meaning}`.toLowerCase();
+		// Trim and normalize inputs so equivalent values with extra spaces,
+		// unicode variants or case differences produce the same hash.
+		const normalizeAndFold = (s: string) =>
+			s.trim().normalize('NFKC').toLowerCase();
+
+		const h = normalizeAndFold(hiragana);
+		const k = kanji ? normalizeAndFold(kanji) : '';
+		const e = normalizeAndFold(english);
+
+		// keep same separator and lowercase the joined string prior to hashing
+		const content = `${h}|${k}|${e}`.toLowerCase();
 		return createHash('sha256').update(content).digest('hex');
 	}
 
