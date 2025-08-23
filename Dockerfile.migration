@@ -1,5 +1,5 @@
 # Migration stage - lightweight Alpine image for running Drizzle migrations
-FROM node:18-alpine AS migration
+FROM node:22-alpine AS migration
 
 # Set working directory
 WORKDIR /app
@@ -16,6 +16,10 @@ COPY pnpm-lock.yaml ./
 
 # Install dependencies (need drizzle-kit only plus pg driver)
 RUN pnpm install --prod=false
+
+# Copy TypeScript config files so any path aliases / compilerOptions are available
+COPY tsconfig.json ./
+COPY tsconfig.build.json ./
 
 # Copy Drizzle config, migrations and schema for type references
 COPY drizzle.config.ts ./drizzle.config.ts
