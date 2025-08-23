@@ -193,29 +193,39 @@ export class QuizzesService {
 			throw new BadRequestException('Missing answers for some words');
 		}
 
-		// Calculate score
+		// Guard against duplicate answers for the same word
+		const answerIdsSet = new Set(answers.map(a => a.wordId));
+		if (answerIdsSet.size !== answers.length) {
+			throw new BadRequestException('Duplicate answers detected');
+		}
+
+		// Calculate score by iterating requiredWordIds so each required word is counted exactly once.
+		// Ignore any extra answers the client may have sent that are not part of requiredWordIds.
 		let correctAnswers = 0;
-		const results = answers.map(answer => {
-			const quizWord = attached.find(qw => qw.wordId === answer.wordId);
+		const answerMap = new Map(answers.map(a => [a.wordId, a]));
+		const results = requiredWordIds.map(wordId => {
+			const quizWord = attached.find(qw => qw.wordId === wordId);
 			if (!quizWord) {
-				throw new BadRequestException(`Invalid word ID: ${answer.wordId}`);
+				// This should not happen, but guard defensively
+				throw new BadRequestException(`Invalid word ID: ${wordId}`);
 			}
 
 			const word = quizWord.word;
-			// Check if answer matches any of the word forms (case insensitive)
-			const isCorrect =
-				answer.answer.toLowerCase() === word.hiragana.toLowerCase() ||
-				(word.kanji &&
-					answer.answer.toLowerCase() === word.kanji.toLowerCase()) ||
-				answer.answer.toLowerCase() === word.english.toLowerCase();
+			const answer = answerMap.get(wordId);
+			const userAnswer = answer?.answer ?? '';
 
-			if (isCorrect) {
-				correctAnswers++;
-			}
+			// Check if answer matches any of the word forms (case insensitive)
+			const ansLower = (userAnswer || '').toLowerCase();
+			const isCorrect =
+				ansLower === (word.hiragana || '').toLowerCase() ||
+				(word.kanji && ansLower === (word.kanji || '').toLowerCase()) ||
+				ansLower === (word.english || '').toLowerCase();
+
+			if (isCorrect) correctAnswers++;
 
 			return {
-				wordId: answer.wordId,
-				userAnswer: answer.answer,
+				wordId,
+				userAnswer,
 				correctAnswers: [word.hiragana, word.kanji, word.english].filter(
 					Boolean
 				),
