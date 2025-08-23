@@ -41,7 +41,7 @@ CREATE TABLE "quizzes" (
 	"title" text NOT NULL,
 	"description" text,
 	"is_public" boolean DEFAULT false NOT NULL,
-	"created_by_id" varchar(32) NOT NULL,
+	"created_by_id" varchar(128) NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
