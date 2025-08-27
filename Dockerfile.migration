@@ -1,5 +1,5 @@
 # Migration stage - lightweight Alpine image for running Drizzle migrations
-FROM node:22-alpine AS migration
+FROM node:24.6.0-alpine AS migration
 
 # Set working directory
 WORKDIR /app
