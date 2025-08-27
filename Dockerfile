@@ -27,7 +27,7 @@ RUN pnpm run build
 RUN pnpm prune --prod
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:24.6.0-alpine AS production
 
 # Set working directory
 WORKDIR /app
