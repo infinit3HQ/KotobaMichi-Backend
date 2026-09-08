@@ -141,13 +141,9 @@ export function render(vars: { name: string; link: string }) {
                             <td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
 
                               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td style="padding-right: 0px;padding-left: 0px;" align="center">
-
-                                    <img align="center" border="0" src="https://minio.012140.xyz/kotobamichi/header.png" alt="" title="" style="outline: none;text-decoration: none;-ms-interpolation-mode: bicubic;clear: both;display: inline-block !important;border: none;height: auto;float: none;width: 100%;max-width: 480px;" width="480" />
-
-                                  </td>
-                                </tr>
+                                    <div style="background: linear-gradient(135deg, #4f46e5, #06b6d4); padding: 24px; text-align: center; border-radius: 8px 8px 0 0; color: #ffffff; font-size: 24px; font-weight: bold; letter-spacing: 1px;">
+                                      言葉道 KotobaMichi
+                                    </div>
                               </table>
 
                             </td>
@@ -239,10 +235,8 @@ export function render(vars: { name: string; link: string }) {
 
                               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                                 <tr>
-                                  <td style="padding-right: 0px;padding-left: 0px;" align="center">
-
-                                    <img align="center" border="0" src="https://minio.012140.xyz/kotobamichi/footer.png" alt="" title="" style="outline: none;text-decoration: none;-ms-interpolation-mode: bicubic;clear: both;display: inline-block !important;border: none;height: auto;float: none;width: 100%;max-width: 480px;" width="480" />
-
+                                  <td style="padding: 12px; text-align: center; font-size: 12px; color: #64748b;" align="center">
+                                    KotobaMichi — Learn Japanese Vocabulary Faster
                                   </td>
                                 </tr>
                               </table>

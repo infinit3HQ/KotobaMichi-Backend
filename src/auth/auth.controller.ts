@@ -7,6 +7,7 @@ import {
 	Get,
 	Req,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { Throttle, seconds } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
@@ -106,5 +107,27 @@ export class AuthController {
 			dto.currentPassword,
 			dto.newPassword
 		);
+	}
+
+	@Get('google')
+	@UseGuards(AuthGuard('google'))
+	async googleAuth() {
+		// Initiates the Google OAuth flow
+		// This is handled automatically by the guard
+	}
+
+	@Get('google/callback')
+	@UseGuards(AuthGuard('google'))
+	async googleAuthCallback(
+		@Req() req: Request,
+		@Res({ passthrough: true }) res: Response
+	) {
+		// After successful authentication, generate JWT tokens
+		const user = (req as any).user;
+
+		const result = await this.authService.loginWithOAuth(user);
+		this.authService.setAuthCookies(res, result);
+
+		return result;
 	}
 }

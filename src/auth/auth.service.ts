@@ -108,6 +108,15 @@ export class AuthService {
 		return rows[0] || null;
 	}
 
+	private async getUserByGoogleId(googleId: string) {
+		const rows = await this.db
+			.select()
+			.from(users)
+			.where(eq(users.googleId, googleId))
+			.limit(1);
+		return rows[0] || null;
+	}
+
 	// ===== Rate-limit helpers for email sends =====
 	private verificationCooldownSeconds(): number {
 		const v = this.config.get<string>('EMAIL_VERIFICATION_COOLDOWN_SECONDS');
@@ -398,6 +407,14 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid credentials');
 		}
 
+		// Check if user has a password (not OAuth-only user)
+		if (!user.password) {
+			this.logger.warn(`Login failed (OAuth-only user): ${email}`);
+			throw new UnauthorizedException(
+				'Please sign in with Google. This account was created with Google Sign-In.'
+			);
+		}
+
 		// Verify password
 		const isPasswordValid = await bcrypt.compare(password, user.password);
 		if (!isPasswordValid) {
@@ -614,6 +631,14 @@ export class AuthService {
 			this.logger.warn(`Change password failed: user not found (${userId})`);
 			throw new UnauthorizedException('User not found');
 		}
+		if (!user.password) {
+			this.logger.warn(
+				`Change password failed: OAuth-only user (${user.email})`
+			);
+			throw new UnauthorizedException(
+				'Cannot change password for OAuth-only accounts'
+			);
+		}
 		const ok = await bcrypt.compare(currentPassword, user.password);
 		if (!ok) {
 			this.logger.warn(
@@ -810,5 +835,108 @@ export class AuthService {
 			'User logged out (cookies cleared and refresh tokens revoked if present)'
 		);
 		return { success: true } as const;
+	}
+
+	async validateOAuthUser(profile: {
+		email: string;
+		googleId: string;
+		name?: string;
+		picture?: string;
+	}) {
+		// Check if user exists by Google ID
+		let user = await this.getUserByGoogleId(profile.googleId);
+
+		if (user) {
+			this.logger.log(
+				`Existing Google user logged in: ${user.email} (googleId: ${profile.googleId})`
+			);
+			return {
+				id: user.id,
+				email: user.email,
+				role: user.role,
+				isEmailVerified: user.isEmailVerified,
+			};
+		}
+
+		// Check if user exists by email
+		user = await this.getUserByEmail(profile.email);
+
+		if (user) {
+			// Link Google account to existing user
+			const [updatedUser] = await this.db
+				.update(users)
+				.set({
+					googleId: profile.googleId,
+					name: profile.name,
+					picture: profile.picture,
+					isEmailVerified: true, // Google verified email
+				})
+				.where(eq(users.id, user.id))
+				.returning();
+
+			this.logger.log(
+				`Linked Google account to existing user: ${profile.email} (googleId: ${profile.googleId})`
+			);
+			return {
+				id: updatedUser!.id,
+				email: updatedUser!.email,
+				role: updatedUser!.role,
+				isEmailVerified: updatedUser!.isEmailVerified,
+			};
+		}
+
+		// Create new user
+		const [newUser] = await this.db
+			.insert(users)
+			.values({
+				id: this.makeId(),
+				email: profile.email,
+				googleId: profile.googleId,
+				name: profile.name,
+				picture: profile.picture,
+				password: null, // No password for OAuth users
+				role: 'USER',
+				isEmailVerified: true, // Google verified email
+			})
+			.returning();
+
+		this.logger.log(
+			`New Google user created: ${profile.email} (googleId: ${profile.googleId})`
+		);
+		return {
+			id: newUser!.id,
+			email: newUser!.email,
+			role: newUser!.role,
+			isEmailVerified: newUser!.isEmailVerified,
+		};
+	}
+
+	async loginWithOAuth(user: { id: string; email: string; role: string }) {
+		// Generate tokens
+		const access = this.signAccessToken(user);
+		const { token: refresh, jti } = this.signRefreshToken(user);
+
+		// Persist refresh token
+		await this.db.insert(refreshTokens).values({
+			id: this.makeId(),
+			jti,
+			userId: user.id,
+			tokenHash: this.hashToken(refresh),
+			expiresAt: this.addMs(
+				new Date(),
+				this.parseTTLToMs(this.refreshTokenTTL())
+			),
+		});
+
+		this.logger.log(`OAuth user logged in: ${user.email}`);
+		return {
+			access_token: access,
+			refresh_token: refresh,
+			user: {
+				id: user.id,
+				email: user.email,
+				role: user.role,
+			},
+		};
 	}
 }

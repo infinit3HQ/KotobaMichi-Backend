@@ -15,6 +15,13 @@
       "when": 1759512190474,
       "tag": "0001_polite_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1759940247774,
+      "tag": "0002_add_google_oauth_fields",
+      "breakpoints": true
     }
   ]
 }

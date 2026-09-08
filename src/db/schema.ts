@@ -18,7 +18,10 @@ export const userRoleEnum = pgEnum('UserRole', ['USER', 'ADMIN']);
 export const users = pgTable('users', {
 	id: varchar('id', { length: 128 }).primaryKey(), // full UUID v7 (128 incl dashes)
 	email: text('email').notNull().unique(),
-	password: text('password').notNull(),
+	password: text('password'),
+	googleId: text('google_id'),
+	name: text('name'),
+	picture: text('picture'),
 	role: userRoleEnum('role').notNull().default('USER'),
 	isEmailVerified: boolean('is_email_verified').notNull().default(false),
 	createdAt: timestamp('created_at', { withTimezone: false })
@@ -56,7 +59,10 @@ export const words = pgTable(
 	},
 	t => [
 		index('words_topic_idx').on(t.topic),
-		index('words_vector_cosine_idx').using('hnsw', t.vector.op('vector_cosine_ops'))
+		index('words_vector_cosine_idx').using(
+			'hnsw',
+			t.vector.op('vector_cosine_ops')
+		),
 	]
 );
 
@@ -70,7 +76,10 @@ export const quizzes = pgTable(
 		isPublic: boolean('is_public').notNull().default(false),
 		createdById: varchar('created_by_id', { length: 128 })
 			.notNull()
-			.references(() => users.id, { onDelete: 'cascade', onUpdate: 'no action' }),
+			.references(() => users.id, {
+				onDelete: 'cascade',
+				onUpdate: 'no action',
+			}),
 		createdAt: timestamp('created_at', { withTimezone: false })
 			.notNull()
 			.defaultNow(),
