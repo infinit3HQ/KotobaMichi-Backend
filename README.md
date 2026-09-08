@@ -1,3 +1,13 @@
+# ⚠️ KotobaMichi-Backend [ARCHIVED]
+
+> [!IMPORTANT]
+> **This repository is archived and read-only.**
+> All backend development, releases, and CI/CD pipelines have been merged into the unified monorepo at:
+> 
+> 👉 **[infinit3HQ/KotobaMichi](https://github.com/infinit3HQ/KotobaMichi)**
+
+---
+
 # KotobaMichi(言葉道)-Backend
 
 KotobaMichi is a JLPT N5 vocabulary learning platform that helps users learn Japanese vocabulary through interactive quizzes and spaced repetition. This repository contains the backend code for the KotobaMichi platform, built with NestJS, Drizzle ORM, and TypeScript.
